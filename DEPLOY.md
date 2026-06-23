@@ -92,9 +92,9 @@ Enter your MFA code when prompted. Tokens are written to `/root/.garmin-mcp/`.
 
 **Taxuspt MCP (workout creation):**
 ```bash
-garmin-mcp-auth
+/opt/venv/bin/garmin-mcp-auth
 ```
-(equivalently: `python -m garmin_mcp.auth_cli`). Enter your MFA code when prompted. Tokens are written to `/root/.garminconnect`.
+(equivalently: `/opt/venv/bin/python -m garmin_mcp.auth_cli`). The Python MCP is installed in a venv at `/opt/venv` — see `nixpacks.toml`. Enter your MFA code when prompted. Tokens are written to `/root/.garminconnect`.
 
 > If the exact setup commands differ, check each repo's README:
 > - [Nicolasvegam README](https://github.com/Nicolasvegam/garmin-connect-mcp)

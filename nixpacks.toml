@@ -4,8 +4,12 @@ providers = ["python", "node"]
 nixPkgs = ["pkgs.python311", "pkgs.python311Packages.pip"]
 
 [phases.install]
+# Nix's system Python is externally-managed (PEP 668) and lives in the
+# immutable /nix/store, so `pip install` can't write to it. Use a venv in a
+# writable path instead; PYTHON_BIN (below) points the app at it at runtime.
 cmds = [
-  "pip install -r requirements.txt",
+  "python -m venv --copies /opt/venv",
+  "/opt/venv/bin/pip install -r requirements.txt",
   "npm install"
 ]
 
@@ -14,3 +18,7 @@ cmds = ["npm run build"]
 
 [start]
 cmd = "npm start"
+
+[variables]
+# The Node app spawns the Taxuspt Garmin MCP via this interpreter.
+PYTHON_BIN = "/opt/venv/bin/python"

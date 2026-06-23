@@ -7,8 +7,9 @@ const clients = new Map<string, Client>();
 const MCP_SERVERS = [
   {
     id: 'taxuspt',
-    // Install: pip install garmin_mcp
-    command: 'python',
+    // Installed from git into a venv (see nixpacks.toml). PYTHON_BIN points at
+    // that venv's interpreter in production; falls back to system python locally.
+    command: process.env.PYTHON_BIN || 'python',
     args: ['-m', 'garmin_mcp'],
   },
   {
