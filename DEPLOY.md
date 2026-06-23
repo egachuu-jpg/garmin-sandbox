@@ -38,6 +38,7 @@ In your Railway service, go to **Variables** and add these:
 | `GARMIN_PASSWORD` | Your Garmin Connect password |
 | `ANTHROPIC_API_KEY` | Your Anthropic API key (`sk-ant-...`) |
 | `NODE_ENV` | `production` |
+| `GARMINTOKENS` | `/root/.garmin-mcp/garminconnect` (redirects the Python MCP's tokens onto the shared volume — see Step 4) |
 
 > `DATABASE_URL` is already set automatically by the PostgreSQL plugin.
 
@@ -47,19 +48,18 @@ After saving variables, Railway will trigger a new deploy. Wait for it to go gre
 
 ## Step 4 — Add a Volume for Garmin token persistence
 
-The two Garmin MCP servers store OAuth tokens in **different** directories after your first login, and Railway's filesystem resets on each deploy. So you need **two** persistent Volumes to keep those tokens alive:
+The two Garmin MCP servers cache OAuth tokens to disk after your first login, and Railway's filesystem resets on each deploy. Railway allows only **one volume per service**, so we mount it where the Node MCP expects its tokens (`/root/.garmin-mcp`) and use the `GARMINTOKENS` env var (Step 3) to redirect the Python MCP's tokens into a subfolder of that same volume:
 
-| MCP server | Token directory | Volume mount path |
+| MCP server | Token directory | On the volume? |
 |---|---|---|
-| Nicolasvegam (Node, health data) | `~/.garmin-mcp/` | `/root/.garmin-mcp` |
-| Taxuspt (Python, workout writes) | `~/.garminconnect` | `/root/.garminconnect` |
+| Nicolasvegam (Node, health data) | `/root/.garmin-mcp` | ✅ volume mount root |
+| Taxuspt (Python, workout writes) | `/root/.garmin-mcp/garminconnect` (via `GARMINTOKENS`) | ✅ subfolder |
 
 1. In your Railway project, click your service → **Volumes** tab → **Add Volume**
-2. Add a volume with **Mount Path** `/root/.garmin-mcp`
-3. Add a second volume with **Mount Path** `/root/.garminconnect`
-4. Railway will redeploy automatically
+2. Set the **Mount Path** to `/root/.garmin-mcp`
+3. Railway will redeploy automatically
 
-> Without both volumes, you'd need to re-authenticate with Garmin's MFA after every deploy.
+> Without this volume (plus the `GARMINTOKENS` var), you'd need to re-authenticate with Garmin's MFA after every deploy.
 
 ---
 
@@ -94,7 +94,7 @@ Enter your MFA code when prompted. Tokens are written to `/root/.garmin-mcp/`.
 ```bash
 /opt/venv/bin/garmin-mcp-auth
 ```
-(equivalently: `/opt/venv/bin/python -m garmin_mcp.auth_cli`). The Python MCP is installed in a venv at `/opt/venv` — see `nixpacks.toml`. Enter your MFA code when prompted. Tokens are written to `/root/.garminconnect`.
+(equivalently: `/opt/venv/bin/python -m garmin_mcp.auth_cli`). The Python MCP is installed in a venv at `/opt/venv` — see `nixpacks.toml`. Enter your MFA code when prompted. Because `GARMINTOKENS` is set (Step 3), tokens are written to `/root/.garmin-mcp/garminconnect` — on the shared volume.
 
 > If the exact setup commands differ, check each repo's README:
 > - [Nicolasvegam README](https://github.com/Nicolasvegam/garmin-connect-mcp)
@@ -142,11 +142,11 @@ In Railway → your service → **Settings** → **Networking** → **Custom Dom
 **App loads but chat shows "MCP server unavailable"**
 > The Garmin MCPs didn't start. Check that:
 > 1. MFA setup was completed (Step 6)
-> 2. Both Volumes are mounted (`/root/.garmin-mcp` and `/root/.garminconnect`)
-> 3. Token files exist: in Railway shell, run `ls /root/.garmin-mcp/` and `ls /root/.garminconnect/`
+> 2. The volume is mounted at `/root/.garmin-mcp` and `GARMINTOKENS=/root/.garmin-mcp/garminconnect` is set
+> 3. Token files exist: in Railway shell, run `ls /root/.garmin-mcp/` and `ls /root/.garmin-mcp/garminconnect/`
 
 **Chat works but workout creation fails**
-> The Taxuspt MCP (Python) handles workout writes. Check it authenticated separately from the Nicolasvegam MCP. Run `garmin-mcp-auth` again in the Railway shell (tokens land in `/root/.garminconnect`).
+> The Taxuspt MCP (Python) handles workout writes. Check it authenticated separately from the Nicolasvegam MCP. Run `/opt/venv/bin/garmin-mcp-auth` again in the Railway shell (tokens land in `/root/.garmin-mcp/garminconnect`).
 
 **"Invalid passphrase" on login**
 > Double-check `APP_PASSPHRASE` in Railway variables. Note: it's case-sensitive and whitespace-sensitive.
