@@ -23,7 +23,9 @@ Estimated time: 30–45 minutes.
 ## Step 2 — Add PostgreSQL
 
 1. Inside your Railway project, click **+ New** → **Database** → **Add PostgreSQL**
-2. Railway automatically creates a `DATABASE_URL` environment variable and injects it into your service. You don't need to copy it anywhere.
+2. The Postgres service exposes its own `DATABASE_URL`. Your **app** service needs a reference to it: in the app service → **Variables**, add `DATABASE_URL` with the value `${{Postgres.DATABASE_URL}}` (use the reference picker; adjust the name if your DB service isn't called `Postgres`).
+
+> ⚠️ Do **not** paste the placeholder from `.env.example` (`...@host:5432/dbname`) — that overrides the real connection string and the app will fail with `getaddrinfo ENOTFOUND host`.
 
 ---
 
