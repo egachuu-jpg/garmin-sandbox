@@ -9,14 +9,11 @@ const MCP_SERVERS = [
     id: 'taxuspt',
     // Installed from git into a venv (see nixpacks.toml). PYTHON_BIN points at
     // that venv's interpreter in production; falls back to system python locally.
+    // This is the only Garmin MCP: 110+ tools (health reads + workout writes).
+    // The Node @nicolasvegam MCP was dropped — it uses garth OAuth1/OAuth2 tokens,
+    // incompatible with this lib's DI-OAuth2 tokens, so it couldn't share auth.
     command: process.env.PYTHON_BIN || 'python',
     args: ['-m', 'garmin_mcp'],
-  },
-  {
-    id: 'nicolas',
-    // Pre-installed via package.json dependency. Published build dir is `build/`.
-    command: 'node',
-    args: ['node_modules/@nicolasvegam/garmin-connect-mcp/build/index.js'],
   },
 ] as const;
 

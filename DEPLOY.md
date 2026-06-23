@@ -40,7 +40,7 @@ In your Railway service, go to **Variables** and add these:
 | `GARMIN_PASSWORD` | Your Garmin Connect password |
 | `ANTHROPIC_API_KEY` | Your Anthropic API key (`sk-ant-...`) |
 | `NODE_ENV` | `production` |
-| `GARMINTOKENS` | `/root/.garmin-mcp` (makes the Python MCP write its tokens into the **same** directory the Node MCP reads — see Step 4) |
+| `GARMINTOKENS` | `/root/.garmin-mcp` (where the Python MCP caches its Garmin tokens — must be on the volume, see Step 4) |
 
 > `DATABASE_URL` is already set automatically by the PostgreSQL plugin.
 
@@ -50,12 +50,7 @@ After saving variables, Railway will trigger a new deploy. Wait for it to go gre
 
 ## Step 4 — Add a Volume for Garmin token persistence
 
-Both Garmin MCP servers use the **same garth OAuth token format** (`oauth1_token.json` + `oauth2_token.json`), and Railway's filesystem resets on each deploy. Railway also allows only **one volume per service**. So we mount one volume where the Node MCP expects its tokens (`/root/.garmin-mcp`) and set `GARMINTOKENS` (Step 3) so the Python MCP writes into that **same** directory. One login then serves both servers, and it survives deploys:
-
-| MCP server | Token directory |
-|---|---|
-| Nicolasvegam (Node, health data) | `/root/.garmin-mcp` (hardcoded to `~/.garmin-mcp`) |
-| Taxuspt (Python, workout writes) | `/root/.garmin-mcp` (via `GARMINTOKENS`) |
+The Garmin MCP caches its OAuth tokens to disk, and Railway's filesystem resets on each deploy — so the tokens must live on a persistent volume. Set `GARMINTOKENS` (Step 3) to the volume mount path so the Python MCP reads/writes there. One login then survives all future deploys.
 
 1. In your Railway project, click your service → **Volumes** tab → **Add Volume**
 2. Set the **Mount Path** to `/root/.garmin-mcp`
@@ -82,20 +77,23 @@ You should see output like `CREATE TABLE`, `CREATE INDEX` — no errors.
 
 ## Step 6 — Authenticate with Garmin (one-time MFA setup)
 
-You need one interactive login to complete Garmin's MFA challenge and cache OAuth tokens to the volume. Because both MCP servers share the same token directory and format (Step 4), **a single login serves both** — the Node MCP refreshes its own OAuth2 from the shared OAuth1 token, no second login needed.
+You need one interactive login to complete Garmin's MFA challenge and cache OAuth tokens to the volume.
 
-> The published `@nicolasvegam/garmin-connect-mcp` npm package ships only the server (`build/index.js`) — its interactive `setup.js` exists in the GitHub source but is **not** in the release. So we authenticate with the Python tool, whose tokens the Node MCP also reads.
+> **`curl_cffi` / `libstdc++`:** Garmin blocks plain-`requests` logins (403/429), so `garminconnect` uses `curl_cffi` to impersonate a browser. `curl_cffi`'s native extension needs `libstdc++.so.6`, which the Nix Python doesn't expose by default — `nixLibs = ["pkgs.stdenv.cc.cc.lib"]` in `nixpacks.toml` puts it on `LD_LIBRARY_PATH`. If a login ever fails with `ImportError: libstdc++.so.6`, set it manually for the command:
+> ```bash
+> export LD_LIBRARY_PATH="$(dirname "$(find /nix/store -name 'libstdc++.so.6' | head -1)")"
+> ```
 
 In the Railway shell (`GARMIN_EMAIL` / `GARMIN_PASSWORD` are already in the env):
 
 ```bash
 /opt/venv/bin/garmin-mcp-auth
 ```
-(equivalently: `/opt/venv/bin/python -m garmin_mcp.auth_cli`). The Python MCP is installed in a venv at `/opt/venv` — see `nixpacks.toml`. Enter your MFA code when prompted. Because `GARMINTOKENS=/root/.garmin-mcp` (Step 3), tokens are written there — the same directory the Node MCP reads.
+(equivalently: `/opt/venv/bin/python -m garmin_mcp.auth_cli`). The Python MCP is installed in a venv at `/opt/venv` — see `nixpacks.toml`. Enter your MFA code when prompted. Because `GARMINTOKENS=/root/.garmin-mcp` (Step 3), tokens are written to the volume as `garmin_tokens.json`.
 
 Confirm both token files landed:
 ```bash
-ls -la /root/.garmin-mcp/   # expect oauth1_token.json and oauth2_token.json
+ls -la /root/.garmin-mcp/   # expect garmin_tokens.json
 ```
 
 You won't need to repeat this unless the tokens expire (~6 months) or you change your Garmin password.
@@ -141,7 +139,7 @@ In Railway → your service → **Settings** → **Networking** → **Custom Dom
 > The Garmin MCPs didn't start. Check that:
 > 1. MFA login was completed (Step 6)
 > 2. The volume is mounted at `/root/.garmin-mcp` and `GARMINTOKENS=/root/.garmin-mcp` is set
-> 3. Token files exist: in Railway shell, run `ls /root/.garmin-mcp/` (expect `oauth1_token.json`, `oauth2_token.json`)
+> 3. Token file exists: in Railway shell, run `ls /root/.garmin-mcp/` (expect `garmin_tokens.json`)
 
 **Chat works but workout creation fails**
 > The Taxuspt MCP (Python) handles workout writes. Re-run `/opt/venv/bin/garmin-mcp-auth` in the Railway shell to refresh the shared tokens (they land in `/root/.garmin-mcp`).
