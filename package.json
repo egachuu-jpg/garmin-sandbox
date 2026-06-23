@@ -6,7 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "db:migrate": "psql $DATABASE_URL -f db/schema.sql"
+    "db:migrate": "node db/migrate.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.32.1",
