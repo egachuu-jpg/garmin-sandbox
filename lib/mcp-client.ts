@@ -14,9 +14,9 @@ const MCP_SERVERS = [
   },
   {
     id: 'nicolas',
-    // Pre-installed via package.json dependency
+    // Pre-installed via package.json dependency. Published build dir is `build/`.
     command: 'node',
-    args: ['node_modules/@nicolasvegam/garmin-connect-mcp/dist/index.js'],
+    args: ['node_modules/@nicolasvegam/garmin-connect-mcp/build/index.js'],
   },
 ] as const;
 

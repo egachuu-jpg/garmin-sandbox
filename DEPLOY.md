@@ -88,9 +88,9 @@ In the Railway shell, set up each MCP server. `GARMIN_EMAIL` / `GARMIN_PASSWORD`
 
 **Nicolasvegam MCP (health data):**
 ```bash
-npx -y @nicolasvegam/garmin-connect-mcp setup
+node node_modules/@nicolasvegam/garmin-connect-mcp/build/setup.js
 ```
-Enter your MFA code when prompted. Tokens are written to `/root/.garmin-mcp/`.
+(The package has a separate `setup` bin — passing `setup` as an arg to the server bin just starts the server.) Enter your MFA code when prompted. Tokens are written to `/root/.garmin-mcp/`.
 
 **Taxuspt MCP (workout creation):**
 ```bash
