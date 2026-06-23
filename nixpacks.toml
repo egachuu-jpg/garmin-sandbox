@@ -2,6 +2,9 @@ providers = ["python", "node"]
 
 [phases.setup]
 nixPkgs = ["pkgs.python311", "pkgs.python311Packages.pip"]
+# curl_cffi's compiled extension needs libstdc++.so.6 at load time; nixLibs
+# adds the gcc runtime libs to LD_LIBRARY_PATH.
+nixLibs = ["pkgs.stdenv.cc.cc.lib"]
 
 [phases.install]
 # Nix's system Python is externally-managed (PEP 668) and lives in the
