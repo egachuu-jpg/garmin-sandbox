@@ -1,1 +1,3 @@
-garmin_mcp
+# Taxuspt Garmin MCP — NOT on PyPI (the PyPI "garmin-mcp" is an unrelated project).
+# Installed straight from GitHub; provides the `garmin_mcp` module + console scripts.
+git+https://github.com/Taxuspt/garmin_mcp
