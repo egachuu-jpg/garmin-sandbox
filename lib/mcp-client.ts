@@ -13,9 +13,9 @@ const MCP_SERVERS = [
   },
   {
     id: 'nicolas',
-    // Install: npm install -g @nicolasvegam/garmin-connect-mcp
-    command: 'npx',
-    args: ['--yes', '@nicolasvegam/garmin-connect-mcp'],
+    // Pre-installed via package.json dependency
+    command: 'node',
+    args: ['node_modules/@nicolasvegam/garmin-connect-mcp/dist/index.js'],
   },
 ] as const;
 

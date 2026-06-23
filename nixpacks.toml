@@ -1,0 +1,16 @@
+providers = ["python", "node"]
+
+[phases.setup]
+nixPkgs = ["pkgs.python311", "pkgs.python311Packages.pip"]
+
+[phases.install]
+cmds = [
+  "pip install -r requirements.txt",
+  "npm ci"
+]
+
+[phases.build]
+cmds = ["npm run build"]
+
+[start]
+cmd = "npm start"

@@ -106,6 +106,89 @@ This schedule groups your high-impact work into a Monday–Thursday morning wind
 
 ---
 
+## Section 5: Cross-Training Protocol
+
+This protocol is designed around four distinct blocks that slot into your existing weekly structure without adding running stress. Each block has a specific day and purpose. Given your right SI joint condition, exercise cues are included where pelvic alignment matters.
+
+---
+
+### Block A — Daily Pre-Run Mobility (5–8 minutes)
+Perform **every training day** before any run or workout. These movements warm up the joint surfaces and establish pelvic awareness before load.
+
+1.  **Ankle Circles:** 10 rotations each direction per foot. Keep the heel grounded, move only from the ankle. Directly addresses ankle stiffness that shifts load compensation to the knee and hip.
+2.  **Hip Circles (Standing):** 10 rotations each direction. Hands on hips, feet hip-width. Move slowly through the full arc — don't rush the end range.
+3.  **Leg Swings — Front to Back:** 10 swings per leg. Hold a wall for balance. Let the leg be fully relaxed; the hip drives the movement, not the quadricep.
+4.  **Leg Swings — Lateral:** 10 swings per leg. Same wall support. Keep your pelvis level — do not let the hip hike on the swing-side leg. This directly trains SI joint stability under dynamic load.
+
+---
+
+### Block B — Post-Run Stretching (10–12 minutes)
+Perform **after every run** (Monday, Tuesday, Thursday, Saturday). Hold each stretch 40–50 seconds per side. This is the highest-value window for tissue length work because muscles are warm and pliable.
+
+**Hip Flexors**
+1.  **Kneeling Hip Flexor Stretch:** Drop into a half-kneeling lunge, back knee on the ground. Tuck your pelvis under (posterior tilt) before leaning forward — do not let your lower back arch. You should feel a pull at the front of the rear hip, not in your lower back. Critical for reducing anterior pelvic tilt that loads the right SI joint.
+2.  **Couch Stretch (Progressive):** Rear foot propped against a wall, front foot flat. Deeper version of above. Introduce this in Week 3 once base hip flexor length is established.
+
+**Calves**
+3.  **Straight-Leg Calf Stretch (Gastrocnemius):** Hands against wall, back leg straight, heel flat. Hold 45 seconds.
+4.  **Bent-Knee Calf Stretch (Soleus):** Same position but bend the back knee slightly. This targets the deeper soleus, which is the muscle most implicated in Achilles issues and calf cramping in late-race miles.
+
+**Sides and Upper Body**
+5.  **Standing Oblique Stretch:** Feet hip-width, reach one arm directly overhead and lean laterally until you feel the stretch along your side. Keep both feet flat and hips squared — don't let the pelvis shift. Hold 40 seconds per side. Frees up the quadratus lumborum, which directly stabilizes the pelvis on each running stride.
+6.  **Standing Chest and Upper Back Opener:** Interlace fingers behind your back, squeeze shoulder blades together, look up slightly. Hold 30 seconds. Counters the forward shoulder posture that compresses breathing during long efforts.
+7.  **Cat-Cow (5–8 slow reps):** On hands and knees, move between full spinal flexion and extension. Move through the mid and upper thoracic spine — not just the lumbar. This decompresses the vertebral joints after impact loading.
+
+---
+
+### Block C — Wednesday Strength Session (45–55 minutes, replaces the cycling block)
+**Replace Wednesday cycling with this session in Weeks 3, 5, 6, 8, 9, 11, 12, and 14.** Keep cycling on all other Wednesdays. Reduces to 30 minutes in Weeks 15–16 (taper). Drop entirely in Race Week.
+
+**Single-Leg Strength (3 sets each, 60 seconds rest between sets)**
+
+1.  **Single-Leg Split Deadlift:** 8–10 reps per side. Stand on one leg, hinge from the hip, reach the free leg back as a counterbalance. Keep your pelvis level throughout — the key SI joint cue is that the hip of the working leg must not drop or rotate. Start with bodyweight, progress to a light dumbbell in the opposite hand (Weeks 6+).
+2.  **Lateral (Side) Lunges:** 10–12 reps per side. Step wide to the side, push the hips back, keep the lunging knee tracking over the toes (not caving inward). Pause at the bottom for 1 second. This builds the hip abductors and adductors that control lateral pelvic stability — the same muscles your clamshell routine targets, but under functional load.
+3.  **Single-Leg Calf Raises:** 15–20 reps per side. Stand on the edge of a step for full range of motion. Lower slowly (3 seconds down). Progress to a loaded version (holding dumbbells) in Weeks 8+. Directly builds the calf and soleus endurance that prevents cramping in miles 20–26.
+
+**Core (3 sets each)**
+
+4.  **Plank:** 30 seconds (Week 3) → 45 seconds (Weeks 5–8) → 60 seconds (Weeks 9+). Keep hips level — do not let your lower back sag. Engage your glutes as well as your core. A sagging plank trains the wrong pattern.
+5.  **Crunches:** 15–20 reps. Controlled, not fast. If you experience any sharp lower back or SI pain, substitute **Dead Bugs** (lying on back, extend opposite arm and leg while keeping lower back pressed flat) — these provide equivalent core work with zero lumbar compressive load.
+
+**Mobility Flow (8–10 minutes, at the end of the strength session)**
+
+6.  **90/90 Hip Mobility:** Sit on the floor, both knees at 90 degrees (one in front, one to the side). Rotate between sides, pausing at end range for 3–5 seconds. 60 seconds each side. Best hip mobility exercise for SI joint function.
+7.  **Wall Ankle Mobility:** Standing facing a wall, drive your knee toward the wall while keeping your heel flat. 10 slow reps per side. Measures and improves dorsiflexion range, which directly affects running gait efficiency.
+8.  **Thread the Needle (Thoracic Rotation):** On hands and knees, slide one arm under your body toward the opposite side. 8 slow reps per side. Targets mid-thoracic rotation without loading the lumbar or SI joint.
+
+---
+
+### Block D — Friday Active Recovery (20–25 minutes)
+Fridays are already rest days. Use the first 20–25 minutes for a flowing mobility session before the day begins. **Do not make this a workout** — the goal is tissue hydration and joint mobility, not fatigue.
+
+1.  **90/90 Hip Flow** (from Block C) — 2 minutes
+2.  **Kneeling Hip Flexor Stretch** (from Block B) — 45 seconds per side
+3.  **Calf Stretch Sequence** (straight-leg then bent-knee) — 45 seconds per position per side
+4.  **Seated Spinal Twist:** Sit cross-legged, place one hand on the opposite knee, rotate your upper torso and look over your shoulder. Hold 45 seconds per side. Opens the thoracic spine and the hip joint simultaneously.
+5.  **Oblique Side Stretch with Overhead Reach** (from Block B) — 45 seconds per side
+6.  **Upper Back Extension:** Sit in a chair, interlace fingers behind your head, gently arch your upper back over the chair back. This is a passive thoracic extension and counteracts the forward lean of running posture. 30 seconds, repeat twice.
+7.  **Figure-4 Hip Stretch (Piriformis):** Lying on your back, cross one ankle over the opposite knee, pull both toward your chest. Hold 45 seconds per side. SI-joint safe version of a deep glute stretch.
+
+---
+
+### Weekly Cross-Training Slot Summary
+
+| Day | Block |
+|---|---|
+| Monday | Block A (pre-run) + Block B (post-run) |
+| Tuesday | Block A (pre-run) + Block B (post-run) |
+| Wednesday | Block A + Block C (strength) *or* cycling per schedule |
+| Thursday | Block A (pre-run) + Block B (post-run) |
+| Friday | Block D (active recovery, 20–25 min) |
+| Saturday | Block A (pre-run) + Block B (post-run) |
+| Sunday | Rest |
+
+---
+
 ## Section 4: Crucial Race Execution Tactics
 *   **New Flatter Course Profile:** As of early 2026, Visit Mankato unveiled [faster, flatter marathon courses](https://greatermankato.com/blog/visit-mankato-unveils-faster-flatter-courses-for-2026-mankato-marathon/) for the full and half events. This removes major historic hill risks, but you must still avoid over-striding on minor downhills to prevent shear force on your right SI joint.
 *   **Monday Running Rule:** Because you run back-to-back on Mondays and Tuesdays, Monday must be your slowest session of the week (10:30–11:00/mile) to preserve your joints.
