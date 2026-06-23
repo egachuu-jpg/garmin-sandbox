@@ -20,7 +20,8 @@ cmds = [
 cmds = ["npm run build"]
 
 [start]
-cmd = "npm start"
+# Wrapper resolves libstdc++ onto LD_LIBRARY_PATH so curl_cffi loads at runtime.
+cmd = "bash start.sh"
 
 [variables]
 # The Node app spawns the Taxuspt Garmin MCP via this interpreter.
