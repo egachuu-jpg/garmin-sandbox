@@ -44,9 +44,20 @@ async function saveMemory(category: string, note: string): Promise<void> {
 type DBMessage = {
   role: 'user' | 'assistant';
   text: string;
-  raw_content: Anthropic.ContentBlock[] | null;
+  // For assistant rows, the full turn as Anthropic MessageParam[] (assistant
+  // content + interleaved tool_result messages) so multi-step tool turns replay
+  // correctly. `unknown` because legacy rows hold ContentBlock[] instead.
+  raw_content: unknown;
   tool_calls: Array<{ id: string; name: string; result: string }> | null;
 };
+
+function isMessageParamList(raw: unknown): raw is Anthropic.MessageParam[] {
+  return (
+    Array.isArray(raw) &&
+    raw.length > 0 &&
+    raw.every(item => item !== null && typeof item === 'object' && 'role' in item)
+  );
+}
 
 function buildAnthropicMessages(dbMessages: DBMessage[]): Anthropic.MessageParam[] {
   const result: Anthropic.MessageParam[] = [];
@@ -54,21 +65,20 @@ function buildAnthropicMessages(dbMessages: DBMessage[]): Anthropic.MessageParam
   for (const msg of dbMessages) {
     if (msg.role === 'user') {
       result.push({ role: 'user', content: msg.text });
-    } else {
-      const content: Anthropic.ContentBlock[] =
-        msg.raw_content ?? [{ type: 'text', text: msg.text }];
-      result.push({ role: 'assistant', content });
+      continue;
+    }
 
-      if (msg.tool_calls?.length) {
-        result.push({
-          role: 'user',
-          content: msg.tool_calls.map(tc => ({
-            type: 'tool_result' as const,
-            tool_use_id: tc.id,
-            content: tc.result,
-          })),
-        });
-      }
+    const raw = msg.raw_content;
+    if (isMessageParamList(raw)) {
+      // New format: replay the assistant turn verbatim (keeps tool_use/tool_result pairing).
+      result.push(...raw);
+    } else if (Array.isArray(raw) && raw.length > 0) {
+      // Legacy format: content blocks only. Emit as assistant and drop the old
+      // flattened tool_calls — their tool_use blocks weren't preserved, so
+      // replaying tool_results would be invalid.
+      result.push({ role: 'assistant', content: raw as Anthropic.ContentBlock[] });
+    } else {
+      result.push({ role: 'assistant', content: msg.text });
     }
   }
 
@@ -128,8 +138,10 @@ export async function POST(req: Request) {
         );
 
         let assistantText = '';
-        let finalRawContent: Anthropic.ContentBlock[] = [];
         const allToolCalls: Array<{ id: string; name: string; result: string }> = [];
+        // The full assistant turn (assistant content + interleaved tool_result
+        // messages), persisted so it can be replayed without breaking tool pairing.
+        const turnMessages: Anthropic.MessageParam[] = [];
 
         // Agentic loop — handles multi-step tool use
         while (true) {
@@ -181,12 +193,10 @@ export async function POST(req: Request) {
           }
 
           const finalMsg = await claudeStream.finalMessage();
-          finalRawContent = roundContent;
 
-          currentMessages = [
-            ...currentMessages,
-            { role: 'assistant' as const, content: roundContent },
-          ];
+          const assistantMsg = { role: 'assistant' as const, content: roundContent };
+          currentMessages = [...currentMessages, assistantMsg];
+          turnMessages.push(assistantMsg);
 
           if (finalMsg.stop_reason !== 'tool_use') break;
 
@@ -225,20 +235,21 @@ export async function POST(req: Request) {
             })
           );
 
-          currentMessages = [
-            ...currentMessages,
-            { role: 'user' as const, content: toolResults },
-          ];
+          const toolResultMsg = { role: 'user' as const, content: toolResults };
+          currentMessages = [...currentMessages, toolResultMsg];
+          turnMessages.push(toolResultMsg);
         }
 
-        // Persist assistant message
+        // Persist the assistant turn. raw_content holds the full turn (assistant
+        // content + tool_result messages) so it replays with valid tool pairing;
+        // text + tool_calls drive the UI on reload.
         await query(
           `INSERT INTO messages (conversation_id, role, text, raw_content, tool_calls)
            VALUES ($1, 'assistant', $2, $3, $4)`,
           [
             conversationId,
             assistantText,
-            JSON.stringify(finalRawContent),
+            JSON.stringify(turnMessages),
             JSON.stringify(allToolCalls),
           ]
         );
