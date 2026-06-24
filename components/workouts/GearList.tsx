@@ -28,35 +28,88 @@ function ProgressBar({ pct }: { pct: number }) {
   );
 }
 
+type GarminGear = {
+  uuid: string;
+  name: string;
+  type: string;
+  miles: number;
+  linked: boolean;
+};
+
+const inputClass =
+  'w-full bg-surface border border-surface-border rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-primary';
+
 function AddGearSheet({ onAdd }: { onAdd: () => void }) {
   const [open, setOpen] = useState(false);
-  const [form, setForm] = useState({
-    name: '',
-    type: 'running_shoe',
-    mileage_offset: '',
-    alert_threshold_miles: '400',
-    notes: '',
-  });
+  const [mode, setMode] = useState<'garmin' | 'manual'>('garmin');
+
+  // Garmin picker state
+  const [garminGear, setGarminGear] = useState<GarminGear[] | null>(null);
+  const [gearError, setGearError] = useState(false);
+  const [selected, setSelected] = useState<GarminGear | null>(null);
+
+  // Shared/manual fields
+  const [alert, setAlert] = useState('400');
+  const [notes, setNotes] = useState('');
+  const [manual, setManual] = useState({ name: '', type: 'running_shoe', mileage_offset: '' });
+  const [submitting, setSubmitting] = useState(false);
+
+  function openSheet() {
+    setOpen(true);
+    setSelected(null);
+    setGarminGear(null);
+    setGearError(false);
+    fetch('/api/gear/garmin')
+      .then(r => r.json())
+      .then(json => {
+        if (json.error) setGearError(true);
+        setGarminGear((json.gear as GarminGear[]) ?? []);
+      })
+      .catch(() => setGearError(true));
+  }
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    await fetch('/api/gear', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        ...form,
-        mileage_offset: Number(form.mileage_offset) || 0,
-        alert_threshold_miles: Number(form.alert_threshold_miles) || 400,
-      }),
-    });
-    setOpen(false);
-    onAdd();
+    if (submitting) return;
+    setSubmitting(true);
+
+    const payload =
+      mode === 'garmin' && selected
+        ? {
+            name: selected.name,
+            type: selected.type,
+            garmin_gear_uuid: selected.uuid,
+            mileage_offset: 0, // Garmin already tracks full mileage
+            alert_threshold_miles: Number(alert) || 400,
+            notes,
+          }
+        : {
+            name: manual.name,
+            type: manual.type,
+            mileage_offset: Number(manual.mileage_offset) || 0,
+            alert_threshold_miles: Number(alert) || 400,
+            notes,
+          };
+
+    try {
+      await fetch('/api/gear', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      setOpen(false);
+      onAdd();
+    } finally {
+      setSubmitting(false);
+    }
   }
+
+  const canSubmit = mode === 'garmin' ? !!selected : manual.name.trim().length > 0;
 
   return (
     <>
       <button
-        onClick={() => setOpen(true)}
+        onClick={openSheet}
         className="flex items-center gap-2 px-4 py-2.5 bg-primary rounded-xl text-sm font-medium text-white"
       >
         <Plus size={16} />
@@ -66,67 +119,114 @@ function AddGearSheet({ onAdd }: { onAdd: () => void }) {
       {open && (
         <div className="fixed inset-0 z-50 flex items-end">
           <div className="absolute inset-0 bg-black/60" onClick={() => setOpen(false)} />
-          <form
-            onSubmit={submit}
-            className="relative w-full bg-surface-card rounded-t-2xl p-6 space-y-4"
-          >
-            <h2 className="text-lg font-bold mb-2">Add Gear</h2>
-            <p className="text-xs text-muted -mt-2">Register gear in Garmin Connect first, then add it here to configure alerts.</p>
+          <form onSubmit={submit} className="relative w-full bg-surface-card rounded-t-2xl p-6 space-y-4 max-h-[85vh] overflow-y-auto">
+            <h2 className="text-lg font-bold">Add Gear</h2>
 
-            <input
-              required
-              placeholder="Name (e.g. Nike Vomero 17)"
-              value={form.name}
-              onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
-              className="w-full bg-surface border border-surface-border rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-primary"
-            />
-
-            <select
-              value={form.type}
-              onChange={e => setForm(f => ({ ...f, type: e.target.value }))}
-              className="w-full bg-surface border border-surface-border rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-primary"
-            >
-              <option value="running_shoe">Running Shoe</option>
-              <option value="trail_shoe">Trail Shoe</option>
-              <option value="road_bike">Road Bike</option>
-              <option value="other">Other</option>
-            </select>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="text-xs text-muted mb-1 block">Starting miles</label>
-                <input
-                  type="number"
-                  placeholder="0"
-                  value={form.mileage_offset}
-                  onChange={e => setForm(f => ({ ...f, mileage_offset: e.target.value }))}
-                  className="w-full bg-surface border border-surface-border rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-primary"
-                />
-              </div>
-              <div>
-                <label className="text-xs text-muted mb-1 block">Alert at (miles)</label>
-                <input
-                  type="number"
-                  value={form.alert_threshold_miles}
-                  onChange={e => setForm(f => ({ ...f, alert_threshold_miles: e.target.value }))}
-                  className="w-full bg-surface border border-surface-border rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-primary"
-                />
-              </div>
+            {/* Mode toggle */}
+            <div className="flex bg-surface rounded-xl p-1 border border-surface-border">
+              {(['garmin', 'manual'] as const).map(m => (
+                <button
+                  type="button"
+                  key={m}
+                  onClick={() => setMode(m)}
+                  className={cn(
+                    'flex-1 py-2 text-sm font-medium rounded-lg transition-colors',
+                    mode === m ? 'bg-primary text-white' : 'text-muted'
+                  )}
+                >
+                  {m === 'garmin' ? 'From Garmin' : 'Manual'}
+                </button>
+              ))}
             </div>
 
+            {mode === 'garmin' ? (
+              <div className="space-y-2">
+                <p className="text-xs text-muted">
+                  Add the shoes in the Garmin Connect app first, then pick them here to track mileage automatically.
+                </p>
+                {garminGear === null && !gearError && (
+                  <p className="text-sm text-muted py-4 text-center">Loading your Garmin gear…</p>
+                )}
+                {gearError && <p className="text-sm text-red-400 py-2">Couldn&apos;t reach Garmin. Try again or add manually.</p>}
+                {garminGear?.length === 0 && !gearError && (
+                  <p className="text-sm text-muted py-2">No active Garmin gear found. Add it in Garmin Connect first.</p>
+                )}
+                <div className="space-y-2">
+                  {garminGear?.map(g => (
+                    <button
+                      type="button"
+                      key={g.uuid}
+                      disabled={g.linked}
+                      onClick={() => setSelected(g)}
+                      className={cn(
+                        'w-full flex items-center justify-between gap-3 px-4 py-3 rounded-xl border text-left transition-colors',
+                        g.linked
+                          ? 'border-surface-border opacity-50 cursor-not-allowed'
+                          : selected?.uuid === g.uuid
+                          ? 'border-primary bg-primary/10'
+                          : 'border-surface-border'
+                      )}
+                    >
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium truncate">{g.name}</p>
+                        <p className="text-xs text-muted">{g.miles} mi on Garmin</p>
+                      </div>
+                      {g.linked && <span className="text-xs text-muted flex-shrink-0">Added</span>}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <input
+                  placeholder="Name (e.g. Nike Vomero 17)"
+                  value={manual.name}
+                  onChange={e => setManual(f => ({ ...f, name: e.target.value }))}
+                  className={inputClass}
+                />
+                <select
+                  value={manual.type}
+                  onChange={e => setManual(f => ({ ...f, type: e.target.value }))}
+                  className={inputClass}
+                >
+                  <option value="running_shoe">Running Shoe</option>
+                  <option value="trail_shoe">Trail Shoe</option>
+                  <option value="road_bike">Road Bike</option>
+                  <option value="other">Other</option>
+                </select>
+                <div>
+                  <label className="text-xs text-muted mb-1 block">Starting miles</label>
+                  <input
+                    type="number"
+                    placeholder="0"
+                    value={manual.mileage_offset}
+                    onChange={e => setManual(f => ({ ...f, mileage_offset: e.target.value }))}
+                    className={inputClass}
+                  />
+                  <p className="text-xs text-muted mt-1">Manual gear won&apos;t auto-update from Garmin.</p>
+                </div>
+              </div>
+            )}
+
+            {/* Shared fields */}
+            <div>
+              <label className="text-xs text-muted mb-1 block">Replace alert at (miles)</label>
+              <input type="number" value={alert} onChange={e => setAlert(e.target.value)} className={inputClass} />
+            </div>
             <textarea
               placeholder="Notes (optional)"
-              value={form.notes}
-              onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
+              value={notes}
+              onChange={e => setNotes(e.target.value)}
               rows={2}
-              className="w-full bg-surface border border-surface-border rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-primary resize-none"
+              className={`${inputClass} resize-none`}
             />
 
             <button
               type="submit"
-              className="w-full bg-primary text-white rounded-xl py-3 font-semibold"
+              disabled={!canSubmit || submitting}
+              className="w-full bg-primary text-white rounded-xl py-3 font-semibold disabled:opacity-40"
             >
-              Add Gear
+              {submitting ? 'Adding…' : 'Add Gear'}
             </button>
           </form>
         </div>

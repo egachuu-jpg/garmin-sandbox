@@ -73,9 +73,19 @@ export async function POST(req: Request) {
   const body = await req.json();
   const { name, type, garmin_gear_uuid, mileage_offset, alert_threshold_miles, notes } = body;
 
+  // Re-linking a Garmin shoe (same UUID) updates the existing row instead of
+  // erroring on the UNIQUE(garmin_gear_uuid) constraint. NULL uuids (manual
+  // gear) never conflict, so each manual add inserts normally.
   const [gear] = await query(
     `INSERT INTO gear (name, type, garmin_gear_uuid, mileage_offset, alert_threshold_miles, notes)
      VALUES ($1, $2, $3, $4, $5, $6)
+     ON CONFLICT (garmin_gear_uuid) DO UPDATE SET
+       name = EXCLUDED.name,
+       type = EXCLUDED.type,
+       alert_threshold_miles = EXCLUDED.alert_threshold_miles,
+       notes = EXCLUDED.notes,
+       retired = FALSE,
+       retired_at = NULL
      RETURNING *`,
     [
       name,
