@@ -53,8 +53,9 @@ function extractList(parsed: unknown): Record<string, unknown>[] {
 const num = (v: unknown): number | null => (typeof v === 'number' ? v : null);
 const str = (v: unknown): string | null => (typeof v === 'string' ? v : null);
 
-export async function GET() {
-  if (cache && Date.now() - cache.at < TTL) {
+export async function GET(req: Request) {
+  const fresh = new URL(req.url).searchParams.has('refresh');
+  if (!fresh && cache && Date.now() - cache.at < TTL) {
     return NextResponse.json({ workouts: cache.data, cached: true });
   }
 

@@ -42,11 +42,11 @@ export function ScheduledWorkouts() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (forceFresh = false) => {
     setLoading(true);
     setError(false);
     try {
-      const res = await fetch('/api/workouts');
+      const res = await fetch(forceFresh ? '/api/workouts?refresh=1' : '/api/workouts');
       const json = await res.json();
       if (json.error) throw new Error(json.error);
       setWorkouts(json.workouts as Workout[]);
@@ -75,7 +75,7 @@ export function ScheduledWorkouts() {
     return (
       <div className="text-center py-12 text-muted">
         <p className="text-sm text-red-400 mb-3">Couldn&apos;t load scheduled workouts</p>
-        <button onClick={load} className="text-sm text-primary font-medium">
+        <button onClick={() => load(true)} className="text-sm text-primary font-medium">
           Retry
         </button>
       </div>
@@ -102,7 +102,7 @@ export function ScheduledWorkouts() {
   return (
     <div className="space-y-2.5 pb-2">
       <div className="flex justify-end">
-        <button onClick={load} aria-label="Refresh" className="text-muted active:text-primary transition-colors p-1">
+        <button onClick={() => load(true)} aria-label="Refresh" className="text-muted active:text-primary transition-colors p-1">
           <RefreshCw size={15} className={loading ? 'animate-spin' : ''} />
         </button>
       </div>
