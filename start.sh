@@ -8,4 +8,6 @@ libdir="$(dirname "$(find /nix/store -name 'libstdc++.so.6' 2>/dev/null | head -
 if [ -n "$libdir" ]; then
   export LD_LIBRARY_PATH="${libdir}:${LD_LIBRARY_PATH:-}"
 fi
-exec npm start
+# Bind to the port Railway provides (falls back to 3000 for local runs) so we
+# never depend on a manual port setting in the Railway dashboard.
+exec npm start -- -p "${PORT:-3000}"

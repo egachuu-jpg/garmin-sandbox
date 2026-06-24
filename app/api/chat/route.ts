@@ -1,6 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { getAllTools, executeTool } from '@/lib/mcp-client';
-import { COACH_SYSTEM_PROMPT } from '@/lib/coach-prompt';
+import { getCoachSystemPrompt } from '@/lib/coach-prompt';
 import { query } from '@/lib/db';
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
@@ -74,6 +74,7 @@ export async function POST(req: Request) {
         );
 
         const tools = await getAllTools();
+        const systemPrompt = getCoachSystemPrompt();
         let currentMessages = buildAnthropicMessages(history);
 
         let assistantText = '';
@@ -85,7 +86,7 @@ export async function POST(req: Request) {
           const claudeStream = anthropic.messages.stream({
             model: 'claude-sonnet-4-6',
             max_tokens: 4096,
-            system: COACH_SYSTEM_PROMPT,
+            system: systemPrompt,
             messages: currentMessages,
             tools: tools as Anthropic.Tool[],
           });
