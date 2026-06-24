@@ -85,10 +85,11 @@ export async function GET() {
   const val = (r: PromiseSettledResult<unknown>) =>
     r.status === 'fulfilled' ? parseToolResult(r.value) : null;
 
-  // get_training_readiness and get_body_battery return lists (one entry per
-  // context/day). Take the first element so we pick the morning assessment
-  // rather than a later recalculation that the DFS would reach first (LIFO).
+  // get_training_readiness returns a list; take the first element (morning assessment).
+  // get_body_battery returns chronological charge/drain events; take the last element
+  // (most recent) and read its end value for the current battery level.
   const firstOf = (v: unknown): unknown => (Array.isArray(v) && v.length > 0 ? v[0] : v);
+  const lastOf = (v: unknown): unknown => (Array.isArray(v) && v.length > 0 ? v[v.length - 1] : v);
 
   const data: DashboardData = {
     date: today,
@@ -96,12 +97,14 @@ export async function GET() {
     // garmin_mcp returns snake_case keys (last_night_avg_hrv_ms, weekly_avg_hrv_ms)
     hrv: pickNumber(val(hrv), ['last_night_avg_hrv_ms', 'lastNightAvg', 'weekly_avg_hrv_ms', 'weeklyAvg', 'last_night_5min_high_hrv_ms', 'lastNight5MinHigh']),
     sleepScore: pickNumber(val(sleep), ['overallScore', 'overall', 'sleepScore', 'value']),
-    // garmin_mcp returns body_battery_level (snake_case); 'charged' is daily gain not current level
-    bodyBattery: pickNumber(firstOf(val(battery)), ['body_battery_level', 'bodyBatteryLevel', 'bodyBattery', 'level']),
+    // Each event has end_body_battery_value (current level after this segment); 'charged'/'used' are deltas
+    bodyBattery: pickNumber(lastOf(val(battery)), ['end_body_battery_value', 'endBodyBatteryValue', 'start_body_battery_value', 'startBodyBatteryValue', 'body_battery_level', 'bodyBatteryLevel']),
     restingHr: pickNumber(val(rhr), ['restingHeartRate', 'value']),
     cached: false,
   };
 
-  cache = { at: Date.now(), data };
+  if (data.bodyBattery !== null || data.readiness !== null) {
+    cache = { at: Date.now(), data };
+  }
   return NextResponse.json(data);
 }
