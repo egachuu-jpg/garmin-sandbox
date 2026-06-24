@@ -36,7 +36,7 @@ export function ChatInterface({ conversationId, initialMessages = [], seedPrompt
     initialMessages[initialMessages.length - 1].role === 'user';
 
   const [messages, setMessages] = useState<Message[]>(() => {
-    const base = initialMessages.map(m => ({
+    const base: Message[] = initialMessages.map(m => ({
       id: m.id,
       role: m.role as 'user' | 'assistant',
       text: m.text,
