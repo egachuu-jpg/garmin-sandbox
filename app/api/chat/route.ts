@@ -194,6 +194,21 @@ export async function POST(req: Request) {
 
           const finalMsg = await claudeStream.finalMessage();
 
+          // Per-turn token usage. `input` is the uncached prompt; cache_read is
+          // served at ~0.1x; cache_creation is the ~1.25x write. If cache_read
+          // stays 0 across turns, the prompt cache isn't being hit (silent cost).
+          // cache_* fields are returned by the API but absent from this SDK
+          // version's Usage type, so widen the shape to read them.
+          const u = finalMsg.usage as typeof finalMsg.usage & {
+            cache_read_input_tokens?: number | null;
+            cache_creation_input_tokens?: number | null;
+          };
+          console.log(
+            `[chat] usage tools=${tools.length} input=${u.input_tokens} ` +
+            `cache_read=${u.cache_read_input_tokens ?? 0} ` +
+            `cache_write=${u.cache_creation_input_tokens ?? 0} output=${u.output_tokens}`
+          );
+
           const assistantMsg = { role: 'assistant' as const, content: roundContent };
           currentMessages = [...currentMessages, assistantMsg];
           turnMessages.push(assistantMsg);
