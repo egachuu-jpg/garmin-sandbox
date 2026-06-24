@@ -13,32 +13,58 @@ type GearRow = {
   retired: boolean;
 };
 
+const KM_TO_MI = 0.621371;
+
+function parseToolResult(content: unknown): unknown {
+  let text = '';
+  if (Array.isArray(content)) {
+    text = content
+      .map(c => (c && typeof (c as { text?: unknown }).text === 'string' ? (c as { text: string }).text : ''))
+      .join('\n');
+  } else if (typeof content === 'string') {
+    text = content;
+  } else {
+    return content ?? null;
+  }
+  try {
+    return JSON.parse(text);
+  } catch {
+    return text;
+  }
+}
+
 export async function GET() {
   const gearItems = await query<GearRow>(
     `SELECT * FROM gear WHERE retired = FALSE ORDER BY created_at DESC`
   );
 
-  const enriched = await Promise.all(
-    gearItems.map(async gear => {
-      let garminMiles = 0;
-      if (gear.garmin_gear_uuid) {
-        try {
-          const stats = (await executeTool('nicolas__get_gear_stats', {
-            gearUuid: gear.garmin_gear_uuid,
-          })) as { totalDistance?: number } | null;
-          garminMiles = stats?.totalDistance ?? 0;
-        } catch {
-          // Garmin unavailable — fall back to offset only
-        }
-      }
-      const totalMiles = Number(garminMiles) + Number(gear.mileage_offset);
-      return {
-        ...gear,
-        total_miles: Math.round(totalMiles),
-        alert_pct: Math.min(100, Math.round((totalMiles / gear.alert_threshold_miles) * 100)),
-      };
-    })
-  );
+  // One call returns all Garmin gear with stats; map uuid -> miles (km source).
+  const milesByUuid = new Map<string, number>();
+  try {
+    const parsed = parseToolResult(await executeTool('taxuspt__get_gear', { include_stats: true }));
+    const list =
+      parsed && typeof parsed === 'object' && Array.isArray((parsed as { gear?: unknown }).gear)
+        ? ((parsed as { gear: Record<string, unknown>[] }).gear)
+        : [];
+    for (const g of list) {
+      const uuid = typeof g.uuid === 'string' ? g.uuid : null;
+      const stats = g.stats as { total_distance_km?: unknown } | undefined;
+      const km = stats && typeof stats.total_distance_km === 'number' ? stats.total_distance_km : 0;
+      if (uuid) milesByUuid.set(uuid, km * KM_TO_MI);
+    }
+  } catch {
+    // Garmin unavailable — fall back to manual offsets only.
+  }
+
+  const enriched = gearItems.map(gear => {
+    const garminMiles = gear.garmin_gear_uuid ? milesByUuid.get(gear.garmin_gear_uuid) ?? 0 : 0;
+    const totalMiles = garminMiles + Number(gear.mileage_offset);
+    return {
+      ...gear,
+      total_miles: Math.round(totalMiles),
+      alert_pct: Math.min(100, Math.round((totalMiles / gear.alert_threshold_miles) * 100)),
+    };
+  });
 
   return NextResponse.json(enriched);
 }
