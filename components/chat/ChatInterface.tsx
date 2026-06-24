@@ -4,6 +4,8 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { Send, Loader2 } from 'lucide-react';
 import { MessageBubble, type Message, type ToolCall } from './MessageBubble';
 
+const PENDING_ID = '__pending_reply__';
+
 type InitialMessage = {
   id: string;
   role: string;
@@ -25,34 +27,90 @@ const SUGGESTED_PROMPTS = [
 ];
 
 export function ChatInterface({ conversationId, initialMessages = [], seedPrompt }: Props) {
-  const [messages, setMessages] = useState<Message[]>(
-    initialMessages.map(m => ({
+  // If we mounted with the last message being a user message it means the user
+  // navigated away while the coach was still responding. The server will finish
+  // the agentic loop and save the reply to the DB regardless — we just need to
+  // poll until it appears.
+  const pendingOnMount =
+    initialMessages.length > 0 &&
+    initialMessages[initialMessages.length - 1].role === 'user';
+
+  const [messages, setMessages] = useState<Message[]>(() => {
+    const base = initialMessages.map(m => ({
       id: m.id,
       role: m.role as 'user' | 'assistant',
       text: m.text,
       toolCalls: m.tool_calls ?? undefined,
-    }))
-  );
+    }));
+    if (pendingOnMount) {
+      base.push({ id: PENDING_ID, role: 'assistant', text: '', toolCalls: [], streaming: true });
+    }
+    return base;
+  });
   const [input, setInput] = useState('');
-  const [streaming, setStreaming] = useState(false);
+  const [streaming, setStreaming] = useState(pendingOnMount);
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const seededRef = useRef(false);
+  const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
+  // Poll for a reply that was saved to the DB after the user navigated away
+  useEffect(() => {
+    if (!pendingOnMount) return;
+
+    let active = true;
+
+    const poll = async () => {
+      if (!active) return;
+      try {
+        const res = await fetch(`/api/messages/${conversationId}`);
+        if (!res.ok || !active) return;
+        const rows: Array<{ id: string; role: string; text: string; tool_calls: unknown }> =
+          await res.json();
+        if (rows[rows.length - 1]?.role === 'assistant') {
+          active = false;
+          setMessages(
+            rows.map(m => ({
+              id: m.id,
+              role: m.role as 'user' | 'assistant',
+              text: m.text,
+              toolCalls: (m.tool_calls as ToolCall[] | null) ?? undefined,
+            }))
+          );
+          setStreaming(false);
+        }
+      } catch {
+        // transient error — keep polling
+      }
+    };
+
+    pollingRef.current = setInterval(poll, 2000);
+    return () => {
+      active = false;
+      if (pollingRef.current) clearInterval(pollingRef.current);
+    };
+  }, [conversationId]); // pendingOnMount is stable (derived from stable initialMessages prop)
+
   const sendMessage = useCallback(
     async (text: string) => {
       if (!text.trim() || streaming) return;
+
+      // Stop any background polling for a previously abandoned reply
+      if (pollingRef.current) {
+        clearInterval(pollingRef.current);
+        pollingRef.current = null;
+      }
 
       const trimmed = text.trim();
       const userMsgId = crypto.randomUUID();
       const assistantMsgId = crypto.randomUUID();
 
       setMessages(prev => [
-        ...prev,
+        ...prev.filter(m => m.id !== PENDING_ID),
         { id: userMsgId, role: 'user', text: trimmed },
         { id: assistantMsgId, role: 'assistant', text: '', toolCalls: [], streaming: true },
       ]);
