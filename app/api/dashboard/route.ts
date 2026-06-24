@@ -85,12 +85,19 @@ export async function GET() {
   const val = (r: PromiseSettledResult<unknown>) =>
     r.status === 'fulfilled' ? parseToolResult(r.value) : null;
 
+  // get_training_readiness and get_body_battery return lists (one entry per
+  // context/day). Take the first element so we pick the morning assessment
+  // rather than a later recalculation that the DFS would reach first (LIFO).
+  const firstOf = (v: unknown): unknown => (Array.isArray(v) && v.length > 0 ? v[0] : v);
+
   const data: DashboardData = {
     date: today,
-    readiness: pickNumber(val(readiness), ['score']),
-    hrv: pickNumber(val(hrv), ['lastNightAvg', 'weeklyAvg', 'lastNight5MinHigh']),
+    readiness: pickNumber(firstOf(val(readiness)), ['score']),
+    // garmin_mcp returns snake_case keys (last_night_avg_hrv_ms, weekly_avg_hrv_ms)
+    hrv: pickNumber(val(hrv), ['last_night_avg_hrv_ms', 'lastNightAvg', 'weekly_avg_hrv_ms', 'weeklyAvg', 'last_night_5min_high_hrv_ms', 'lastNight5MinHigh']),
     sleepScore: pickNumber(val(sleep), ['overallScore', 'overall', 'sleepScore', 'value']),
-    bodyBattery: pickNumber(val(battery), ['bodyBatteryLevel', 'bodyBattery', 'level', 'charged']),
+    // garmin_mcp returns body_battery_level (snake_case); 'charged' is daily gain not current level
+    bodyBattery: pickNumber(firstOf(val(battery)), ['body_battery_level', 'bodyBatteryLevel', 'bodyBattery', 'level']),
     restingHr: pickNumber(val(rhr), ['restingHeartRate', 'value']),
     cached: false,
   };
