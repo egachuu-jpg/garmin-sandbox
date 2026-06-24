@@ -1,4 +1,5 @@
 import { cn } from '@/lib/utils';
+import { Markdown } from './Markdown';
 
 export type ToolCall = {
   id: string;
@@ -71,13 +72,13 @@ export function MessageBubble({ message }: { message: Message }) {
         {(message.text || message.streaming) && (
           <div
             className={cn(
-              'px-4 py-3 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap',
+              'px-4 py-3 rounded-2xl text-sm leading-relaxed',
               isUser
-                ? 'bg-primary text-white rounded-tr-sm'
+                ? 'bg-primary text-white rounded-tr-sm whitespace-pre-wrap'
                 : 'bg-surface-card border border-surface-border text-gray-100 rounded-tl-sm'
             )}
           >
-            {message.text}
+            {isUser ? message.text : message.text && <Markdown>{message.text}</Markdown>}
 
             {/* Loading dots when no text yet */}
             {message.streaming && !message.text && (

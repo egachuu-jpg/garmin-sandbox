@@ -1,3 +1,5 @@
+import { getPlanContext } from './training';
+
 const ATHLETE_PROFILE = `You are a world-class AI running coach. Here is your athlete's full profile:
 
 ## Athlete Profile
@@ -40,29 +42,7 @@ const ATHLETE_PROFILE = `You are a world-class AI running coach. Here is your at
 // Computed fresh on every request so the coach always knows the real date and
 // where it falls in the 17-week plan (Week 1 Day 1 = Mon, June 22, 2026).
 function getTrainingContext(): string {
-  const now = new Date();
-
-  const todayLabel = new Intl.DateTimeFormat('en-US', {
-    timeZone: 'America/Chicago',
-    weekday: 'long',
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-  }).format(now);
-
-  // Chicago calendar date as YYYY-MM-DD, anchored to UTC midnight for whole-day math.
-  const ymd = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'America/Chicago',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).format(now);
-  const today = new Date(`${ymd}T00:00:00Z`);
-  const planStart = new Date('2026-06-22T00:00:00Z');
-  const raceDay = new Date('2026-10-17T00:00:00Z');
-  const DAY = 86400000;
-  const daysSinceStart = Math.round((today.getTime() - planStart.getTime()) / DAY);
-  const daysToRace = Math.round((raceDay.getTime() - today.getTime()) / DAY);
+  const { todayLabel, dayName, daysSinceStart, daysToRace } = getPlanContext();
 
   let phase: string;
   if (daysSinceStart < 0) {
@@ -72,7 +52,7 @@ function getTrainingContext(): string {
   } else {
     const week = Math.floor(daysSinceStart / 7) + 1;
     const day = (daysSinceStart % 7) + 1; // 1 = Monday
-    phase = `Training plan: **Week ${week} of 17, Day ${day} of 7**. ${daysToRace} day(s) until race day (October 17, 2026).`;
+    phase = `Training plan: **Week ${week} of 17, Day ${day} of 7** (${dayName}). ${daysToRace} day(s) until race day (October 17, 2026).`;
   }
 
   return `## Current Context (computed live — this is the source of truth for "today"; ignore any other date)
@@ -80,6 +60,31 @@ function getTrainingContext(): string {
 - ${phase}`;
 }
 
-export function getCoachSystemPrompt(): string {
-  return `${ATHLETE_PROFILE}\n\n${getTrainingContext()}`;
+// Durable notes the coach has chosen to save. Injected every chat so the coach
+// "remembers" subjective history (injuries, how sessions felt, preferences)
+// across days without resending old transcripts.
+function renderMemory(memories: MemoryNote[]): string {
+  if (memories.length === 0) {
+    return `## Coach Memory
+You have no saved notes yet about this athlete.`;
+  }
+  const lines = memories
+    .map(m => `- [${m.date} · ${m.category}] ${m.note}`)
+    .join('\n');
+  return `## Coach Memory (durable notes you previously saved — treat as known history)
+${lines}`;
 }
+
+export type MemoryNote = { date: string; category: string; note: string };
+
+export function getCoachSystemPrompt(memories: MemoryNote[] = []): string {
+  return [ATHLETE_PROFILE, getTrainingContext(), renderMemory(memories), MEMORY_GUIDANCE].join('\n\n');
+}
+
+const MEMORY_GUIDANCE = `## Saving to Memory
+You have a \`remember\` tool. Call it (at your own discretion, without asking) whenever the athlete shares a durable, subjective fact worth recalling weeks later:
+- Injuries/symptoms (especially SI joint / hip) and how they evolve — use category "injury"
+- How a workout or the body felt, sleep/life-stress context — category "subjective"
+- Preferences (paces, workout types, schedule constraints) — category "preference"
+- Coaching decisions you made and why — category "decision"
+Do NOT save objective metrics (mileage, HRV, sleep score, pace) — you can always re-fetch those from Garmin. Keep each note one or two sentences.`;

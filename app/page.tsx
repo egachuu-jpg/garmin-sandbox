@@ -1,21 +1,11 @@
 import Link from 'next/link';
-import { Activity, Brain, Battery, Moon, ChevronRight } from 'lucide-react';
+import { ChevronRight } from 'lucide-react';
 import { BottomNav } from '@/components/nav/BottomNav';
+import { getPlanContext } from '@/lib/training';
+import { ReadinessPanel } from '@/components/home/ReadinessPanel';
 
-const PLAN_START = new Date('2026-06-22');
-const RACE_DATE = new Date('2026-10-17');
-
-function getCurrentWeek(): number {
-  const now = new Date();
-  const msPerWeek = 1000 * 60 * 60 * 24 * 7;
-  const week = Math.floor((now.getTime() - PLAN_START.getTime()) / msPerWeek) + 1;
-  return Math.max(1, Math.min(17, week));
-}
-
-function getDaysToRace(): number {
-  const now = new Date();
-  return Math.ceil((RACE_DATE.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
-}
+// Date-sensitive — never statically cache a stale "today".
+export const dynamic = 'force-dynamic';
 
 const WEEK_1_WORKOUTS: Record<string, { title: string; detail: string }> = {
   Monday:    { title: '3 mi easy + SI Routine', detail: 'Target: 10:00–10:45/mi' },
@@ -27,57 +17,24 @@ const WEEK_1_WORKOUTS: Record<string, { title: string; detail: string }> = {
   Sunday:    { title: 'Complete Rest',            detail: 'Full recovery' },
 };
 
-function getTodayWorkout() {
-  const days = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
-  const dayName = days[new Date().getDay()];
+function getTodayWorkout(dayName: string) {
   return { day: dayName, workout: WEEK_1_WORKOUTS[dayName] };
 }
 
 export default function HomePage() {
-  const currentWeek = getCurrentWeek();
-  const daysToRace = getDaysToRace();
-  const { day, workout } = getTodayWorkout();
+  const { todayLabel, dayName, week: currentWeek, daysToRace } = getPlanContext();
+  const { day, workout } = getTodayWorkout(dayName);
 
   return (
     <div className="flex flex-col min-h-screen bg-surface pb-24">
       <div className="px-4 safe-top pb-2">
-        <p className="text-muted text-sm">
-          {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
-        </p>
+        <p className="text-muted text-sm">{todayLabel}</p>
         <h1 className="text-2xl font-bold mt-0.5">Daily Readiness</h1>
       </div>
 
       <div className="px-4 space-y-4 mt-2">
-        {/* Readiness — loads live data in Phase 2 */}
-        <div className="bg-surface-card border border-surface-border rounded-2xl p-5">
-          <div className="flex items-center justify-between mb-1">
-            <span className="text-muted text-xs font-medium tracking-wide uppercase">Training Readiness</span>
-            <Activity size={16} className="text-muted" />
-          </div>
-          <div className="flex items-end gap-3 mt-3">
-            <div className="text-5xl font-bold text-muted">—</div>
-            <p className="text-sm text-muted pb-1">Connect Garmin to see score</p>
-          </div>
-        </div>
-
-        {/* Stat chips */}
-        <div className="grid grid-cols-3 gap-3">
-          {[
-            { icon: Brain,   label: 'HRV',     unit: 'ms' },
-            { icon: Moon,    label: 'Sleep',    unit: 'score' },
-            { icon: Battery, label: 'Battery',  unit: '%' },
-          ].map(({ icon: Icon, label, unit }) => (
-            <div
-              key={label}
-              className="bg-surface-card border border-surface-border rounded-xl p-3 text-center"
-            >
-              <Icon size={16} className="text-muted mx-auto mb-1.5" />
-              <p className="text-xs text-muted">{label}</p>
-              <p className="text-xl font-semibold mt-0.5">—</p>
-              <p className="text-xs text-muted">{unit}</p>
-            </div>
-          ))}
-        </div>
+        {/* Live readiness + HRV/sleep/battery from Garmin (cached client-side) */}
+        <ReadinessPanel />
 
         {/* Today's workout */}
         <div className="bg-surface-card border border-surface-border rounded-2xl p-5">

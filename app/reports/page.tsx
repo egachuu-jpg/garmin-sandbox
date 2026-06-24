@@ -40,7 +40,7 @@ export default function ReportsPage() {
         {REPORTS.map(report => (
           <Link
             key={report.title}
-            href={`/chat?prompt=${encodeURIComponent(report.prompt)}`}
+            href={`/chat?new=1&prompt=${encodeURIComponent(report.prompt)}`}
             className="flex items-center gap-4 bg-surface-card border border-surface-border rounded-2xl p-4 active:bg-surface-border transition-colors"
           >
             <span className="text-2xl w-10 text-center flex-shrink-0">{report.emoji}</span>

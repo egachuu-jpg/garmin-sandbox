@@ -37,5 +37,16 @@ CREATE TABLE IF NOT EXISTS activity_gear (
   PRIMARY KEY (activity_id, gear_id)
 );
 
+-- Durable coach memory: subjective facts the coach chooses to remember
+-- (injuries, how sessions felt, preferences, decisions). Injected into the
+-- system prompt every chat so recall works across days without resending chats.
+CREATE TABLE IF NOT EXISTS coach_memory (
+  id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  category    TEXT        NOT NULL DEFAULT 'note',
+  note        TEXT        NOT NULL,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(conversation_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_conversations_updated ON conversations(updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_coach_memory_created ON coach_memory(created_at DESC);

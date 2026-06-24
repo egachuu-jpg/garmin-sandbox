@@ -163,6 +163,11 @@ Push to the branch and Railway auto-deploys. The Volume persists — no need to 
 git push origin main
 ```
 
+> **After a deploy that changes the database schema** (e.g. the `coach_memory` table), re-run the migration in the Railway shell — it's idempotent (`CREATE TABLE IF NOT EXISTS`):
+> ```bash
+> npm run db:migrate
+> ```
+
 ---
 
 ## Cost estimate

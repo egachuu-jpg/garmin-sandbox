@@ -1,9 +1,45 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { getAllTools, executeTool } from '@/lib/mcp-client';
-import { getCoachSystemPrompt } from '@/lib/coach-prompt';
+import { getCoachSystemPrompt, type MemoryNote } from '@/lib/coach-prompt';
 import { query } from '@/lib/db';
 
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+// maxRetries lets the SDK back off and retry 429/overloaded responses (with
+// Retry-After) instead of failing the report outright.
+const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY, maxRetries: 5 });
+
+// Synthetic tool (not from an MCP) the coach calls to persist durable notes.
+const REMEMBER_TOOL: Anthropic.Tool = {
+  name: 'remember',
+  description:
+    'Save a durable, subjective fact about the athlete to long-term coach memory so you can recall it weeks later (injuries/symptoms, how a session felt, preferences, coaching decisions). Do NOT use for objective metrics you can re-fetch from Garmin.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      category: {
+        type: 'string',
+        enum: ['injury', 'subjective', 'preference', 'decision', 'note'],
+        description: 'The kind of note.',
+      },
+      note: { type: 'string', description: 'One or two sentences. Be specific.' },
+    },
+    required: ['note'],
+  },
+};
+
+async function loadMemories(): Promise<MemoryNote[]> {
+  const rows = await query<{ category: string; note: string; created_at: string }>(
+    `SELECT category, note, created_at FROM coach_memory ORDER BY created_at ASC LIMIT 200`
+  );
+  return rows.map(r => ({
+    category: r.category,
+    note: r.note,
+    date: new Date(r.created_at).toISOString().split('T')[0],
+  }));
+}
+
+async function saveMemory(category: string, note: string): Promise<void> {
+  await query(`INSERT INTO coach_memory (category, note) VALUES ($1, $2)`, [category || 'note', note]);
+}
 
 type DBMessage = {
   role: 'user' | 'assistant';
@@ -73,9 +109,23 @@ export async function POST(req: Request) {
           [conversationId]
         );
 
-        const tools = await getAllTools();
-        const systemPrompt = getCoachSystemPrompt();
+        const [mcpTools, memories] = await Promise.all([getAllTools(), loadMemories()]);
+        const tools = [...(mcpTools as Anthropic.Tool[]), REMEMBER_TOOL];
+        const systemPrompt = getCoachSystemPrompt(memories);
         let currentMessages = buildAnthropicMessages(history);
+
+        // Prompt caching: the system prompt and the (large, constant) tool
+        // definitions are identical across every turn of the agentic loop, so
+        // cache them. This is the main fix for report 429s — subsequent turns
+        // read the ~110 tool schemas from cache instead of re-sending them.
+        // cache_control is accepted by the API but isn't in this SDK version's
+        // TextBlockParam type, so assert the shape.
+        const cachedSystem = [
+          { type: 'text', text: systemPrompt, cache_control: { type: 'ephemeral' } },
+        ] as unknown as Anthropic.TextBlockParam[];
+        const cachedTools = tools.map((t, i) =>
+          i === tools.length - 1 ? { ...t, cache_control: { type: 'ephemeral' as const } } : t
+        );
 
         let assistantText = '';
         let finalRawContent: Anthropic.ContentBlock[] = [];
@@ -86,9 +136,9 @@ export async function POST(req: Request) {
           const claudeStream = anthropic.messages.stream({
             model: 'claude-sonnet-4-6',
             max_tokens: 4096,
-            system: systemPrompt,
+            system: cachedSystem,
             messages: currentMessages,
-            tools: tools as Anthropic.Tool[],
+            tools: cachedTools,
           });
 
           const roundContent: Anthropic.ContentBlock[] = [];
@@ -149,11 +199,17 @@ export async function POST(req: Request) {
             toolUseBlocks.map(async block => {
               let result: string;
               try {
-                const raw = await executeTool(
-                  block.name,
-                  block.input as Record<string, unknown>
-                );
-                result = JSON.stringify(raw);
+                if (block.name === 'remember') {
+                  const input = block.input as { category?: string; note?: string };
+                  await saveMemory(input.category ?? 'note', input.note ?? '');
+                  result = 'Saved to coach memory.';
+                } else {
+                  const raw = await executeTool(
+                    block.name,
+                    block.input as Record<string, unknown>
+                  );
+                  result = JSON.stringify(raw);
+                }
                 send({ type: 'tool_done', name: block.name, id: block.id });
               } catch (err) {
                 result = `Error: ${String(err)}`;

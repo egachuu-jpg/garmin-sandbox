@@ -1,22 +1,100 @@
 import { NextResponse } from 'next/server';
 import { executeTool } from '@/lib/mcp-client';
+import { getPlanContext } from '@/lib/training';
+
+// Garmin data changes slowly and the MCP round-trip is slow, so cache the
+// dashboard server-side and refresh at most every 10 minutes.
+const TTL = 10 * 60 * 1000;
+let cache: { at: number; data: DashboardData } | null = null;
+
+type DashboardData = {
+  date: string;
+  readiness: number | null;
+  hrv: number | null;
+  sleepScore: number | null;
+  bodyBattery: number | null;
+  restingHr: number | null;
+  cached: boolean;
+};
+
+// executeTool returns the MCP content array: [{ type: 'text', text: '...' }].
+function parseToolResult(content: unknown): unknown {
+  let text = '';
+  if (Array.isArray(content)) {
+    text = content
+      .map(c => (c && typeof (c as { text?: unknown }).text === 'string' ? (c as { text: string }).text : ''))
+      .join('\n');
+  } else if (typeof content === 'string') {
+    text = content;
+  } else {
+    return content ?? null;
+  }
+  try {
+    return JSON.parse(text);
+  } catch {
+    return text;
+  }
+}
+
+// Garmin's JSON shapes vary and nest deeply, so search (in priority order) for
+// the first occurrence of each candidate key holding a number (or { value }).
+function pickNumber(obj: unknown, keys: string[]): number | null {
+  for (const key of keys) {
+    const found = searchKey(obj, key.toLowerCase());
+    if (found !== null) return found;
+  }
+  return null;
+}
+
+function searchKey(root: unknown, key: string): number | null {
+  const seen = new Set<unknown>();
+  const stack = [root];
+  while (stack.length) {
+    const cur = stack.pop();
+    if (!cur || typeof cur !== 'object') continue;
+    if (seen.has(cur)) continue;
+    seen.add(cur);
+    for (const [k, v] of Object.entries(cur as Record<string, unknown>)) {
+      if (k.toLowerCase() === key) {
+        if (typeof v === 'number') return v;
+        if (v && typeof v === 'object' && typeof (v as { value?: unknown }).value === 'number') {
+          return (v as { value: number }).value;
+        }
+      }
+      if (v && typeof v === 'object') stack.push(v);
+    }
+  }
+  return null;
+}
 
 export async function GET() {
-  const today = new Date().toISOString().split('T')[0];
+  if (cache && Date.now() - cache.at < TTL) {
+    return NextResponse.json({ ...cache.data, cached: true });
+  }
 
-  const [readiness, hrv, sleep, bodyBattery, steps] = await Promise.allSettled([
-    executeTool('nicolas__get_training_readiness', { date: today }),
-    executeTool('nicolas__get_hrv', { date: today }),
-    executeTool('nicolas__get_sleep_data', { date: today }),
-    executeTool('nicolas__get_body_battery', { date: today }),
-    executeTool('nicolas__get_steps', { date: today }),
+  const today = getPlanContext().startOfTodayUTC.toISOString().split('T')[0];
+
+  const [readiness, hrv, sleep, battery, rhr] = await Promise.allSettled([
+    executeTool('taxuspt__get_training_readiness', { date: today }),
+    executeTool('taxuspt__get_hrv_data', { date: today }),
+    executeTool('taxuspt__get_sleep_data', { date: today }),
+    executeTool('taxuspt__get_body_battery', { start_date: today, end_date: today }),
+    executeTool('taxuspt__get_rhr_day', { date: today }),
   ]);
 
-  return NextResponse.json({
-    readiness: readiness.status === 'fulfilled' ? readiness.value : null,
-    hrv: hrv.status === 'fulfilled' ? hrv.value : null,
-    sleep: sleep.status === 'fulfilled' ? sleep.value : null,
-    bodyBattery: bodyBattery.status === 'fulfilled' ? bodyBattery.value : null,
-    steps: steps.status === 'fulfilled' ? steps.value : null,
-  });
+  const val = (r: PromiseSettledResult<unknown>) =>
+    r.status === 'fulfilled' ? parseToolResult(r.value) : null;
+
+  const data: DashboardData = {
+    date: today,
+    readiness: pickNumber(val(readiness), ['score']),
+    hrv: pickNumber(val(hrv), ['lastNightAvg', 'weeklyAvg', 'lastNight5MinHigh']),
+    sleepScore: pickNumber(val(sleep), ['overallScore', 'overall', 'sleepScore', 'value']),
+    bodyBattery: pickNumber(val(battery), ['bodyBatteryLevel', 'bodyBattery', 'level', 'charged']),
+    restingHr: pickNumber(val(rhr), ['restingHeartRate', 'value']),
+    cached: false,
+  };
+
+  cache = { at: Date.now(), data };
+  return NextResponse.json(data);
 }
