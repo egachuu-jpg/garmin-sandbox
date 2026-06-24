@@ -1,10 +1,9 @@
 'use client';
 
 import { useState } from 'react';
-import Link from 'next/link';
-import { Dumbbell, Footprints, Plus, AlertTriangle } from 'lucide-react';
 import { BottomNav } from '@/components/nav/BottomNav';
 import { GearList } from '@/components/workouts/GearList';
+import { ScheduledWorkouts } from '@/components/workouts/ScheduledWorkouts';
 
 export default function WorkoutsPage() {
   const [tab, setTab] = useState<'scheduled' | 'gear'>('scheduled');
@@ -33,24 +32,7 @@ export default function WorkoutsPage() {
       </div>
 
       <div className="flex-1 px-4">
-        {tab === 'scheduled' ? (
-          <div>
-            <div className="text-center py-12 text-muted">
-              <Dumbbell size={36} className="mx-auto mb-3 opacity-30" />
-              <p className="text-sm font-medium">No workouts scheduled yet</p>
-              <p className="text-xs mt-1 mb-6">Ask coach to build and schedule one</p>
-              <Link
-                href="/chat?prompt=Schedule%20this%20week's%20workouts%20from%20my%20training%20plan%20on%20my%20Garmin%20calendar"
-                className="inline-flex items-center gap-2 px-4 py-2.5 bg-primary rounded-xl text-sm font-medium text-white"
-              >
-                <Plus size={16} />
-                Ask coach to schedule
-              </Link>
-            </div>
-          </div>
-        ) : (
-          <GearList />
-        )}
+        {tab === 'scheduled' ? <ScheduledWorkouts /> : <GearList />}
       </div>
 
       <BottomNav />
