@@ -59,6 +59,57 @@ function isMessageParamList(raw: unknown): raw is Anthropic.MessageParam[] {
   );
 }
 
+function isToolResultBlock(block: unknown): block is Anthropic.ToolResultBlockParam {
+  return typeof block === 'object' && block !== null && (block as { type?: string }).type === 'tool_result';
+}
+
+// Defensive repair for history already persisted with a dangling tool_use (e.g.
+// from a turn that hit max_tokens mid-batch before tool execution completed —
+// see the loop fix below). Anthropic rejects a tool_use block that isn't
+// immediately followed by its tool_result, so patch in placeholders rather
+// than letting every future turn 400.
+function repairToolPairing(messages: Anthropic.MessageParam[]): Anthropic.MessageParam[] {
+  const result: Anthropic.MessageParam[] = [];
+
+  for (let i = 0; i < messages.length; i++) {
+    const msg = messages[i];
+    result.push(msg);
+    if (msg.role !== 'assistant' || !Array.isArray(msg.content)) continue;
+
+    const toolUseIds = msg.content
+      .filter((b): b is Anthropic.ToolUseBlock => b.type === 'tool_use')
+      .map(b => b.id);
+    if (toolUseIds.length === 0) continue;
+
+    const next = messages[i + 1];
+    const nextResultBlocks =
+      next && next.role === 'user' && Array.isArray(next.content)
+        ? next.content.filter(isToolResultBlock)
+        : [];
+    const existingIds = new Set(nextResultBlocks.map(b => b.tool_use_id));
+    const missing = toolUseIds.filter(id => !existingIds.has(id));
+    if (missing.length === 0) continue;
+
+    const placeholders = missing.map(id => ({
+      type: 'tool_result' as const,
+      tool_use_id: id,
+      content: 'Error: no result was recorded for this tool call (the turn was interrupted).',
+    }));
+
+    if (nextResultBlocks.length > 0) {
+      (
+        next!.content as Array<
+          Anthropic.TextBlockParam | Anthropic.ImageBlockParam | Anthropic.ToolUseBlockParam | Anthropic.ToolResultBlockParam
+        >
+      ).unshift(...placeholders);
+    } else {
+      result.push({ role: 'user', content: placeholders });
+    }
+  }
+
+  return result;
+}
+
 function buildAnthropicMessages(dbMessages: DBMessage[]): Anthropic.MessageParam[] {
   const result: Anthropic.MessageParam[] = [];
 
@@ -82,7 +133,7 @@ function buildAnthropicMessages(dbMessages: DBMessage[]): Anthropic.MessageParam
     }
   }
 
-  return result;
+  return repairToolPairing(result);
 }
 
 export async function POST(req: Request) {
@@ -147,7 +198,7 @@ export async function POST(req: Request) {
         while (true) {
           const claudeStream = anthropic.messages.stream({
             model: 'claude-sonnet-4-6',
-            max_tokens: 4096,
+            max_tokens: 8192,
             system: cachedSystem,
             messages: currentMessages,
             tools: cachedTools,
@@ -213,46 +264,54 @@ export async function POST(req: Request) {
           currentMessages = [...currentMessages, assistantMsg];
           turnMessages.push(assistantMsg);
 
-          if (finalMsg.stop_reason !== 'tool_use') break;
-
-          // Execute all tool calls in parallel
+          // Execute any tool calls Claude produced this round, even if the
+          // turn didn't end with stop_reason 'tool_use' (e.g. it hit
+          // max_tokens mid-batch while emitting several tool_use blocks).
+          // Leaving a tool_use block without a paired tool_result corrupts
+          // the conversation for every future turn (the Anthropic API
+          // rejects it), so resolve whatever was parsed before deciding
+          // whether to continue the loop.
           const toolUseBlocks = roundContent.filter(
             (b): b is Anthropic.ToolUseBlock => b.type === 'tool_use'
           );
 
-          const toolResults = await Promise.all(
-            toolUseBlocks.map(async block => {
-              let result: string;
-              try {
-                if (block.name === 'remember') {
-                  const input = block.input as { category?: string; note?: string };
-                  await saveMemory(input.category ?? 'note', input.note ?? '');
-                  result = 'Saved to coach memory.';
-                } else {
-                  const raw = await executeTool(
-                    block.name,
-                    block.input as Record<string, unknown>
-                  );
-                  result = JSON.stringify(raw);
+          if (toolUseBlocks.length > 0) {
+            const toolResults = await Promise.all(
+              toolUseBlocks.map(async block => {
+                let result: string;
+                try {
+                  if (block.name === 'remember') {
+                    const input = block.input as { category?: string; note?: string };
+                    await saveMemory(input.category ?? 'note', input.note ?? '');
+                    result = 'Saved to coach memory.';
+                  } else {
+                    const raw = await executeTool(
+                      block.name,
+                      block.input as Record<string, unknown>
+                    );
+                    result = JSON.stringify(raw);
+                  }
+                  send({ type: 'tool_done', name: block.name, id: block.id });
+                } catch (err) {
+                  result = `Error: ${String(err)}`;
+                  send({ type: 'tool_error', name: block.name, id: block.id });
                 }
-                send({ type: 'tool_done', name: block.name, id: block.id });
-              } catch (err) {
-                result = `Error: ${String(err)}`;
-                send({ type: 'tool_error', name: block.name, id: block.id });
-              }
 
-              allToolCalls.push({ id: block.id, name: block.name, result });
-              return {
-                type: 'tool_result' as const,
-                tool_use_id: block.id,
-                content: result,
-              };
-            })
-          );
+                allToolCalls.push({ id: block.id, name: block.name, result });
+                return {
+                  type: 'tool_result' as const,
+                  tool_use_id: block.id,
+                  content: result,
+                };
+              })
+            );
 
-          const toolResultMsg = { role: 'user' as const, content: toolResults };
-          currentMessages = [...currentMessages, toolResultMsg];
-          turnMessages.push(toolResultMsg);
+            const toolResultMsg = { role: 'user' as const, content: toolResults };
+            currentMessages = [...currentMessages, toolResultMsg];
+            turnMessages.push(toolResultMsg);
+          }
+
+          if (finalMsg.stop_reason !== 'tool_use') break;
         }
 
         // Persist the assistant turn. raw_content holds the full turn (assistant
