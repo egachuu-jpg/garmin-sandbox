@@ -36,26 +36,6 @@ function parseToolResult(content: unknown): unknown {
   }
 }
 
-// get_body_battery hits Garmin's wellness-service daily report, which returns
-// one object per day shaped like:
-//   { calendarDate, charged, drained, bodyBatteryValuesArray: [[timestampMs, status, level, version], ...], ... }
-// The current level lives in the *last* [timestamp, status, level, version]
-// tuple, not under a named key — a plain key-name search (pickNumber below)
-// can't find it because array entries aren't keyed objects.
-function extractBodyBattery(raw: unknown): number | null {
-  const days = Array.isArray(raw) ? raw : [raw];
-  for (let d = days.length - 1; d >= 0; d--) {
-    const day = days[d];
-    const values = day && typeof day === 'object' ? (day as { bodyBatteryValuesArray?: unknown }).bodyBatteryValuesArray : null;
-    if (!Array.isArray(values)) continue;
-    for (let i = values.length - 1; i >= 0; i--) {
-      const entry = values[i];
-      if (Array.isArray(entry) && typeof entry[2] === 'number') return entry[2];
-    }
-  }
-  return null;
-}
-
 // Garmin's JSON shapes vary and nest deeply, so search (in priority order) for
 // the first occurrence of each candidate key holding a number (or { value }).
 function pickNumber(obj: unknown, keys: string[]): number | null {
@@ -94,11 +74,16 @@ export async function GET() {
 
   const today = getPlanContext().startOfTodayUTC.toISOString().split('T')[0];
 
-  const [readiness, hrv, sleep, battery, rhr] = await Promise.allSettled([
+  const [readiness, hrv, sleep, stats, rhr] = await Promise.allSettled([
     executeTool('taxuspt__get_training_readiness', { date: today }),
     executeTool('taxuspt__get_hrv_data', { date: today }),
     executeTool('taxuspt__get_sleep_data', { date: today }),
-    executeTool('taxuspt__get_body_battery', { start_date: today, end_date: today }),
+    // get_body_battery's own curation logic reads bodyBatteryActivityEvent /
+    // bodyBatteryDynamicFeedbackEvent off the reports/daily payload — fields
+    // that endpoint doesn't have — so it can never surface a level. get_stats
+    // pulls the same number correctly from the daily summary endpoint instead
+    // (bodyBatteryMostRecentValue).
+    executeTool('taxuspt__get_stats', { date: today }),
     executeTool('taxuspt__get_rhr_day', { date: today }),
   ]);
 
@@ -114,7 +99,8 @@ export async function GET() {
     // garmin_mcp returns snake_case keys (last_night_avg_hrv_ms, weekly_avg_hrv_ms)
     hrv: pickNumber(val(hrv), ['last_night_avg_hrv_ms', 'lastNightAvg', 'weekly_avg_hrv_ms', 'weeklyAvg', 'last_night_5min_high_hrv_ms', 'lastNight5MinHigh']),
     sleepScore: pickNumber(val(sleep), ['overallScore', 'overall', 'sleepScore', 'value']),
-    bodyBattery: extractBodyBattery(val(battery)),
+    // get_stats curates this as "body_battery_current" from Garmin's raw bodyBatteryMostRecentValue.
+    bodyBattery: pickNumber(val(stats), ['body_battery_current', 'bodyBatteryMostRecentValue']),
     restingHr: pickNumber(val(rhr), ['restingHeartRate', 'value']),
     cached: false,
   };
