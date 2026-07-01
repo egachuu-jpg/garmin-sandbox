@@ -2,28 +2,15 @@ import Link from 'next/link';
 import { ChevronRight } from 'lucide-react';
 import { BottomNav } from '@/components/nav/BottomNav';
 import { getPlanContext } from '@/lib/training';
+import { getDayWorkout } from '@/lib/plan-schedule';
 import { ReadinessPanel } from '@/components/home/ReadinessPanel';
 
 // Date-sensitive — never statically cache a stale "today".
 export const dynamic = 'force-dynamic';
 
-const WEEK_1_WORKOUTS: Record<string, { title: string; detail: string }> = {
-  Monday:    { title: '3 mi easy + SI Routine', detail: 'Target: 10:00–10:45/mi' },
-  Tuesday:   { title: '3 mi easy + SI Routine', detail: 'Target: 10:00–10:45/mi' },
-  Wednesday: { title: '30 min cycling',          detail: 'Low resistance, 85+ RPM' },
-  Thursday:  { title: '2 mi easy shakeout',      detail: 'Target: 10:00–10:45/mi' },
-  Friday:    { title: 'Complete Rest',            detail: 'Recovery & SI prep' },
-  Saturday:  { title: '5 mi recovery long run',  detail: 'Target: 10:00–10:45/mi' },
-  Sunday:    { title: 'Complete Rest',            detail: 'Full recovery' },
-};
-
-function getTodayWorkout(dayName: string) {
-  return { day: dayName, workout: WEEK_1_WORKOUTS[dayName] };
-}
-
 export default function HomePage() {
   const { todayLabel, dayName, week: currentWeek, daysToRace } = getPlanContext();
-  const { day, workout } = getTodayWorkout(dayName);
+  const workout = getDayWorkout(currentWeek, dayName);
 
   return (
     <div className="flex flex-col min-h-screen bg-surface pb-24">
@@ -39,7 +26,7 @@ export default function HomePage() {
         {/* Today's workout */}
         <div className="bg-surface-card border border-surface-border rounded-2xl p-5">
           <p className="text-muted text-xs font-medium uppercase tracking-wide mb-3">
-            Today · {day}
+            Today · {dayName} · Week {currentWeek}
           </p>
           <p className="text-base font-semibold">{workout.title}</p>
           <p className="text-sm text-muted mt-1">{workout.detail}</p>
