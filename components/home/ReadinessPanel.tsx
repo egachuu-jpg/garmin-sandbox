@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { Activity, Brain, Battery, Moon, RefreshCw } from 'lucide-react';
+import { Activity, Brain, Battery, Moon, RefreshCw, ChevronDown } from 'lucide-react';
 
 type Dashboard = {
   readiness: number | null;
@@ -9,6 +9,15 @@ type Dashboard = {
   sleepScore: number | null;
   bodyBattery: number | null;
   restingHr: number | null;
+};
+
+type MetricKey = 'readiness' | 'hrv' | 'sleep' | 'battery';
+
+const METRIC_LABELS: Record<MetricKey, string> = {
+  readiness: 'Training Readiness',
+  hrv: 'HRV',
+  sleep: 'Sleep',
+  battery: 'Body Battery',
 };
 
 function readinessLabel(score: number | null): string {
@@ -24,9 +33,19 @@ export function ReadinessPanel() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
 
+  // Tapping a tile tells the story of that data point inline — no chat
+  // navigation. Only one metric is expanded at a time; insights are cached
+  // per metric per load so re-tapping doesn't re-fire the request.
+  const [expanded, setExpanded] = useState<MetricKey | null>(null);
+  const [insights, setInsights] = useState<Partial<Record<MetricKey, string>>>({});
+  const [insightLoading, setInsightLoading] = useState(false);
+  const [insightError, setInsightError] = useState(false);
+
   const load = useCallback(async () => {
     setLoading(true);
     setError(false);
+    setExpanded(null);
+    setInsights({});
     try {
       const res = await fetch('/api/dashboard');
       if (!res.ok) throw new Error('bad status');
@@ -42,8 +61,50 @@ export function ReadinessPanel() {
     load();
   }, [load]);
 
+  const fetchInsight = useCallback(
+    async (metric: MetricKey) => {
+      if (!data) return;
+      setInsightLoading(true);
+      setInsightError(false);
+      try {
+        const res = await fetch('/api/insight', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ metric, dashboard: data }),
+        });
+        if (!res.ok) throw new Error('bad status');
+        const json = await res.json();
+        setInsights(prev => ({ ...prev, [metric]: json.insight ?? '' }));
+      } catch {
+        setInsightError(true);
+      } finally {
+        setInsightLoading(false);
+      }
+    },
+    [data]
+  );
+
+  const toggleMetric = useCallback(
+    (metric: MetricKey) => {
+      if (!data) return;
+      if (expanded === metric) {
+        setExpanded(null);
+        return;
+      }
+      setExpanded(metric);
+      if (insights[metric] === undefined) fetchInsight(metric);
+    },
+    [data, expanded, insights, fetchInsight]
+  );
+
   const score = data?.readiness ?? null;
   const fmt = (v: number | null | undefined) => (v === null || v === undefined ? '—' : String(Math.round(v)));
+
+  const stats: Array<{ key: MetricKey; icon: typeof Brain; label: string; unit: string; value: number | null | undefined }> = [
+    { key: 'hrv', icon: Brain, label: 'HRV', unit: 'ms', value: data?.hrv },
+    { key: 'sleep', icon: Moon, label: 'Sleep', unit: 'score', value: data?.sleepScore },
+    { key: 'battery', icon: Battery, label: 'Battery', unit: '%', value: data?.bodyBattery },
+  ];
 
   return (
     <>
@@ -51,7 +112,14 @@ export function ReadinessPanel() {
       <div className="bg-surface-card border border-surface-border rounded-2xl p-5">
         <div className="flex items-center justify-between mb-1">
           <span className="text-muted text-xs font-medium tracking-wide uppercase">Training Readiness</span>
-          <button onClick={load} aria-label="Refresh" className="text-muted active:text-primary transition-colors">
+          <button
+            onClick={e => {
+              e.stopPropagation();
+              load();
+            }}
+            aria-label="Refresh"
+            className="text-muted active:text-primary transition-colors"
+          >
             <RefreshCw size={15} className={loading ? 'animate-spin' : ''} />
           </button>
         </div>
@@ -67,30 +135,70 @@ export function ReadinessPanel() {
             <div className="h-4 w-24 rounded bg-surface-border animate-pulse mb-2" />
           </div>
         ) : (
-          <div className="flex items-end gap-3 mt-3">
+          <button
+            onClick={() => toggleMetric('readiness')}
+            className="flex items-end gap-3 mt-3 w-full text-left active:opacity-70 transition-opacity"
+          >
             <div className="text-5xl font-bold">{fmt(score)}</div>
-            <p className="text-sm text-muted pb-1">{readinessLabel(score)}</p>
-          </div>
+            <p className="text-sm text-muted pb-1 flex-1">{readinessLabel(score)}</p>
+            <ChevronDown
+              size={16}
+              className={`text-muted mb-2 transition-transform ${expanded === 'readiness' ? 'rotate-180' : ''}`}
+            />
+          </button>
         )}
       </div>
 
       {/* Stat chips */}
       <div className="grid grid-cols-3 gap-3">
-        {[
-          { icon: Brain, label: 'HRV', unit: 'ms', value: data?.hrv },
-          { icon: Moon, label: 'Sleep', unit: 'score', value: data?.sleepScore },
-          { icon: Battery, label: 'Battery', unit: '%', value: data?.bodyBattery },
-        ].map(({ icon: Icon, label, unit, value }) => (
-          <div key={label} className="bg-surface-card border border-surface-border rounded-xl p-3 text-center">
+        {stats.map(({ key, icon: Icon, label, unit, value }) => (
+          <button
+            key={key}
+            onClick={() => toggleMetric(key)}
+            disabled={!data}
+            className={`bg-surface-card border rounded-xl p-3 text-center transition-colors ${
+              expanded === key ? 'border-primary' : 'border-surface-border'
+            }`}
+          >
             <Icon size={16} className="text-muted mx-auto mb-1.5" />
             <p className="text-xs text-muted">{label}</p>
             <p className="text-xl font-semibold mt-0.5">
-              {loading && !data ? <span className="inline-block h-5 w-8 rounded bg-surface-border animate-pulse align-middle" /> : fmt(value)}
+              {loading && !data ? (
+                <span className="inline-block h-5 w-8 rounded bg-surface-border animate-pulse align-middle" />
+              ) : (
+                fmt(value)
+              )}
             </p>
             <p className="text-xs text-muted">{unit}</p>
-          </div>
+          </button>
         ))}
       </div>
+
+      {/* "Tell the story" panel — expands inline under the tiles, never
+          navigates to chat. */}
+      {expanded && (
+        <div className="bg-surface-card border border-surface-border rounded-2xl p-4">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs font-medium uppercase tracking-wide text-primary">{METRIC_LABELS[expanded]}</span>
+            <button onClick={() => setExpanded(null)} className="text-muted text-xs active:text-primary transition-colors">
+              Close
+            </button>
+          </div>
+          {insightLoading ? (
+            <div className="space-y-2">
+              <div className="h-3 w-full rounded bg-surface-border animate-pulse" />
+              <div className="h-3 w-5/6 rounded bg-surface-border animate-pulse" />
+              <div className="h-3 w-3/4 rounded bg-surface-border animate-pulse" />
+            </div>
+          ) : insightError ? (
+            <button onClick={() => fetchInsight(expanded)} className="text-sm text-red-400">
+              Couldn&apos;t generate an insight — tap to retry
+            </button>
+          ) : (
+            <p className="text-sm text-gray-300 leading-relaxed">{insights[expanded]}</p>
+          )}
+        </div>
+      )}
     </>
   );
 }
