@@ -27,6 +27,8 @@ export type RouteCandidate = {
   ascentMeters: number;
   descentMeters: number;
   durationSeconds: number;
+  /** Measured share (0..1) of the route on trail/track way types; null if unknown. */
+  trailFraction: number | null;
   explanation: string;
   score: number;
 };
@@ -113,7 +115,9 @@ async function generateLoops(
   startLngLat: LngLat,
   preferShelter: boolean
 ): Promise<RawCandidate[]> {
-  const seeds = [7, 23, 47, 71];
+  // ORS's loop generator can't be told "use trails" — it only nudges. So when
+  // trails are requested, cast a wider net and let trail-share scoring pick.
+  const seeds = params.prefs.surface === 'trails' ? [7, 23, 47, 71, 101, 131] : [7, 23, 47, 71];
   const results = await Promise.allSettled(
     seeds.map(seed =>
       orsRoundTrip(params.sport, startLngLat, params.distanceMeters, seed, params.prefs, preferShelter)
@@ -131,8 +135,15 @@ async function generateOutAndBacks(
   windy: boolean,
   preferShelter: boolean
 ): Promise<RawCandidate[]> {
-  // Windy: aim the outbound leg into the wind (± a little variety). Calm: spread.
-  const bearings = windy && wind ? [wind.directionDeg, wind.directionDeg - 35, wind.directionDeg + 35] : [0, 120, 240];
+  // Windy: aim the outbound leg into the wind (± a little variety). Calm:
+  // spread — more directions when hunting trails, since trail corridors are
+  // directional and most bearings will miss them.
+  const bearings =
+    windy && wind
+      ? [wind.directionDeg, wind.directionDeg - 35, wind.directionDeg + 35]
+      : params.prefs.surface === 'trails'
+        ? [0, 60, 120, 180, 240, 300]
+        : [0, 120, 240];
 
   const buildOne = async (bearing: number): Promise<OrsRoute> => {
     let crow = (params.distanceMeters / 2) * CROW_FACTOR;
@@ -153,13 +164,14 @@ async function generateOutAndBacks(
         preferShelter
       );
     }
-    // Mirror the outbound for the return leg.
+    // Mirror the outbound for the return leg (same paths, so same trail share).
     return {
       coordinates: [...out.coordinates, ...[...out.coordinates].reverse().slice(1)],
       distanceMeters: out.distanceMeters * 2,
       durationSeconds: out.durationSeconds * 2,
       ascentMeters: out.ascentMeters + out.descentMeters,
       descentMeters: out.ascentMeters + out.descentMeters,
+      trailFraction: out.trailFraction,
     };
   };
 
@@ -188,6 +200,8 @@ export async function suggestRoutes(params: SuggestParams): Promise<SuggestResul
     throw new Error('Route generation failed — OpenRouteService returned no usable routes for that start point.');
   }
 
+  const wantTrails = params.prefs.surface === 'trails';
+
   const scored = raw.map(({ name, route, intoWind }) => {
     const windScore =
       !windy || !wind
@@ -196,17 +210,32 @@ export async function suggestRoutes(params: SuggestParams): Promise<SuggestResul
           ? 1 // headwind-out is exactly what we want on a windy day
           : 1 - windExposure(route.coordinates, wind.directionDeg).lateHeadwindFraction;
 
-    const score =
-      0.5 * distanceScore(route.distanceMeters, params.distanceMeters) +
-      0.25 * climbScore(route, params.prefs.elevation) +
-      0.25 * windScore;
+    // Measured trail share (path/track way types). ~60%+ trail is excellent in
+    // most metros, so saturate the score there rather than demanding 100%.
+    const trailScore = route.trailFraction == null ? 0.5 : Math.min(1, route.trailFraction / 0.625);
 
+    const score = wantTrails
+      ? 0.35 * distanceScore(route.distanceMeters, params.distanceMeters) +
+        0.15 * climbScore(route, params.prefs.elevation) +
+        0.2 * windScore +
+        0.3 * trailScore
+      : 0.5 * distanceScore(route.distanceMeters, params.distanceMeters) +
+        0.25 * climbScore(route, params.prefs.elevation) +
+        0.25 * windScore;
+
+    const pct = route.trailFraction != null ? Math.round(route.trailFraction * 100) : null;
     const surfaceNote =
-      params.prefs.surface === 'trails'
-        ? 'Biased toward trails and paths'
-        : params.prefs.surface === 'roads'
-          ? 'Road-first routing'
-          : 'Mixed surfaces';
+      wantTrails && pct != null
+        ? pct >= 20
+          ? `${pct}% on real trails/tracks`
+          : `only ${pct}% on trails/tracks — little trail access within reach of this start`
+        : wantTrails
+          ? 'Biased toward trails and paths'
+          : params.prefs.surface === 'roads'
+            ? 'Road-first routing'
+            : pct != null && pct >= 15
+              ? `Mixed surfaces (${pct}% trails/tracks)`
+              : 'Mixed surfaces';
     const shelterNote = preferShelter && params.sport === 'running' ? ', weighted toward parks/tree cover for shelter' : '';
 
     return {
@@ -217,6 +246,7 @@ export async function suggestRoutes(params: SuggestParams): Promise<SuggestResul
       ascentMeters: Math.round(route.ascentMeters),
       descentMeters: Math.round(route.descentMeters),
       durationSeconds: Math.round(route.durationSeconds),
+      trailFraction: route.trailFraction,
       explanation: `${fmt(route)}. ${surfaceNote}${shelterNote}. ${windSentence(wind, windy, route, intoWind)}`,
       score,
     };

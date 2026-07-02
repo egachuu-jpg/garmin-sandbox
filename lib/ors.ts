@@ -22,7 +22,18 @@ export type OrsRoute = {
   durationSeconds: number;
   ascentMeters: number;
   descentMeters: number;
+  /**
+   * Fraction (0..1) of the route on actual trails (OSM path/track way types),
+   * or null when ORS didn't return way-type extras. ORS profiles only *nudge*
+   * toward trails — this measured share is what lets the suggester select for
+   * them for real.
+   */
+  trailFraction: number | null;
 };
+
+// ORS waytype extra codes: 4 = path, 5 = track — the "real trail" way types.
+// (3 = street, 7 = footway/sidewalk, 6 = cycleway, etc. are deliberately out.)
+const TRAIL_WAYTYPES = new Set([4, 5]);
 
 const ORS_BASE = 'https://api.openrouteservice.org/v2/directions';
 
@@ -50,7 +61,9 @@ function buildOptions(
   const opts: OrsOptions = {};
   if (profile.startsWith('foot-')) {
     const weightings: Record<string, number> = {};
-    if (prefs.surface === 'trails' || preferShelter) weightings.green = preferShelter ? 1 : 0.7;
+    // Max the green weighting whenever trails are asked for — it's a soft
+    // nudge at best, so there's no reason to hold back.
+    if (prefs.surface === 'trails' || preferShelter) weightings.green = 1;
     if (prefs.avoidBusyRoads) weightings.quiet = 0.6;
     if (Object.keys(weightings).length > 0) opts.profile_params = { weightings };
   }
@@ -64,7 +77,7 @@ async function callOrs(profile: string, body: Record<string, unknown>): Promise<
   const res = await fetch(`${ORS_BASE}/${profile}/geojson`, {
     method: 'POST',
     headers: { Authorization: key, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ elevation: true, instructions: false, ...body }),
+    body: JSON.stringify({ elevation: true, instructions: false, extra_info: ['waytype'], ...body }),
     signal: AbortSignal.timeout(20_000),
   });
 
@@ -82,11 +95,21 @@ async function callOrs(profile: string, body: Record<string, unknown>): Promise<
   const json = (await res.json()) as {
     features?: Array<{
       geometry: { coordinates: LngLat[] };
-      properties: { summary?: { distance?: number; duration?: number }; ascent?: number; descent?: number };
+      properties: {
+        summary?: { distance?: number; duration?: number };
+        ascent?: number;
+        descent?: number;
+        extras?: { waytypes?: { summary?: Array<{ value: number; distance: number; amount: number }> } };
+      };
     }>;
   };
   const feature = json.features?.[0];
   if (!feature) throw new Error(`OpenRouteService (${profile}): empty response`);
+
+  const waytypes = feature.properties.extras?.waytypes?.summary;
+  const trailFraction = waytypes
+    ? waytypes.filter(w => TRAIL_WAYTYPES.has(w.value)).reduce((sum, w) => sum + w.amount, 0) / 100
+    : null;
 
   return {
     coordinates: feature.geometry.coordinates,
@@ -94,6 +117,7 @@ async function callOrs(profile: string, body: Record<string, unknown>): Promise<
     durationSeconds: feature.properties.summary?.duration ?? 0,
     ascentMeters: feature.properties.ascent ?? 0,
     descentMeters: feature.properties.descent ?? 0,
+    trailFraction,
   };
 }
 
