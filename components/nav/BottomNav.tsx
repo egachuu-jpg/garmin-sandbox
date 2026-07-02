@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Home, MessageCircle, BarChart2, Dumbbell, Calendar } from 'lucide-react';
+import { Home, MessageCircle, BarChart2, Dumbbell, Map, Calendar } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 const tabs = [
@@ -10,6 +10,7 @@ const tabs = [
   { href: '/chat', icon: MessageCircle, label: 'Chat' },
   { href: '/reports', icon: BarChart2, label: 'Reports' },
   { href: '/workouts', icon: Dumbbell, label: 'Workouts' },
+  { href: '/routes', icon: Map, label: 'Routes' },
   { href: '/plan', icon: Calendar, label: 'Plan' },
 ];
 

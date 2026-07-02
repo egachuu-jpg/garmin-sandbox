@@ -1,7 +1,9 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { getAllTools, executeTool } from '@/lib/mcp-client';
 import { getCoachSystemPrompt, type MemoryNote } from '@/lib/coach-prompt';
-import { query } from '@/lib/db';
+import { query, queryOne } from '@/lib/db';
+import { suggestRoutes } from '@/lib/route-suggest';
+import { getPlanContext } from '@/lib/training';
 
 // maxRetries lets the SDK back off and retry 429/overloaded responses (with
 // Retry-After) instead of failing the report outright.
@@ -25,6 +27,94 @@ const REMEMBER_TOOL: Anthropic.Tool = {
     required: ['note'],
   },
 };
+
+// Synthetic tool: generate wind-aware route suggestions for a workout. Runs the
+// same engine as the Routes tab and saves the best candidate so the athlete can
+// view/edit it on the map.
+const SUGGEST_ROUTE_TOOL: Anthropic.Tool = {
+  name: 'suggest_route',
+  description:
+    'Suggest a run or ride route starting from the athlete\'s saved home base, sized to a target distance and shaped by the wind forecast for the workout date (headwind-out / sheltered routing on windy days). Saves the best route so the athlete can view and edit it on the Routes tab. Use when the athlete asks where to run/ride a workout.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      sport: { type: 'string', enum: ['running', 'cycling'] },
+      distance_miles: { type: 'number', description: 'Target route distance in miles.' },
+      date: { type: 'string', description: 'Workout date, YYYY-MM-DD. Defaults to today.' },
+      surface: { type: 'string', enum: ['trails', 'roads', 'mixed'], description: 'Surface preference. Default mixed.' },
+      shape: { type: 'string', enum: ['loop', 'out_and_back'], description: 'Default loop; out_and_back is best on windy days.' },
+      elevation: { type: 'string', enum: ['flat', 'hilly', 'any'], description: 'Terrain preference. Default any.' },
+      avoid_busy_roads: { type: 'boolean' },
+    },
+    required: ['sport', 'distance_miles'],
+  },
+};
+
+async function runSuggestRoute(input: {
+  sport?: string;
+  distance_miles?: number;
+  date?: string;
+  surface?: string;
+  shape?: string;
+  elevation?: string;
+  avoid_busy_roads?: boolean;
+}): Promise<string> {
+  const place = await queryOne<{ name: string; lat: number; lng: number }>(
+    `SELECT name, lat, lng FROM saved_places ORDER BY is_default DESC, created_at ASC LIMIT 1`
+  );
+  if (!place) {
+    return 'No saved start point exists yet. Ask the athlete to open the Routes tab and save a home-base place first — route suggestions start from it.';
+  }
+
+  const sport = input.sport === 'cycling' ? 'cycling' : 'running';
+  const date = input.date ?? getPlanContext().startOfTodayUTC.toISOString().split('T')[0];
+  const prefs = {
+    surface: (['trails', 'roads', 'mixed'].includes(input.surface ?? '') ? input.surface : 'mixed') as 'trails' | 'roads' | 'mixed',
+    elevation: (['flat', 'hilly', 'any'].includes(input.elevation ?? '') ? input.elevation : 'any') as 'flat' | 'hilly' | 'any',
+    shape: (input.shape === 'out_and_back' ? 'out_and_back' : 'loop') as 'loop' | 'out_and_back',
+    avoidBusyRoads: input.avoid_busy_roads !== false,
+  };
+
+  const result = await suggestRoutes({
+    sport,
+    distanceMeters: (input.distance_miles ?? 5) * 1609.34,
+    date,
+    start: { lat: place.lat, lng: place.lng },
+    prefs,
+  });
+
+  const best = result.candidates[0];
+  const saved = await queryOne<{ id: string }>(
+    `INSERT INTO routes (name, sport, workout_date, distance_meters, ascent_meters, geojson, waypoints, prefs, wind, source)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'suggested')
+     RETURNING id`,
+    [
+      `${best.name} — ${date}`,
+      sport,
+      date,
+      best.distanceMeters,
+      best.ascentMeters,
+      JSON.stringify(best.geojson),
+      JSON.stringify(best.waypoints),
+      JSON.stringify(prefs),
+      result.wind ? JSON.stringify(result.wind) : null,
+    ]
+  );
+
+  return JSON.stringify({
+    start: place.name,
+    wind: result.wind,
+    windy: result.windy,
+    candidates: result.candidates.map(c => ({
+      name: c.name,
+      distance_miles: +(c.distanceMeters / 1609.34).toFixed(1),
+      climb_feet: Math.round(c.ascentMeters * 3.281),
+      explanation: c.explanation,
+    })),
+    saved_route: { id: saved?.id, name: `${best.name} — ${date}` },
+    note: 'The best candidate was saved — the athlete can view and edit it on the Routes tab (Saved).',
+  });
+}
 
 async function loadMemories(): Promise<MemoryNote[]> {
   const rows = await query<{ category: string; note: string; created_at: string }>(
@@ -171,7 +261,7 @@ export async function POST(req: Request) {
         );
 
         const [mcpTools, memories] = await Promise.all([getAllTools(), loadMemories()]);
-        const tools = [...(mcpTools as Anthropic.Tool[]), REMEMBER_TOOL];
+        const tools = [...(mcpTools as Anthropic.Tool[]), REMEMBER_TOOL, SUGGEST_ROUTE_TOOL];
         const systemPrompt = getCoachSystemPrompt(memories);
         let currentMessages = buildAnthropicMessages(history);
 
@@ -284,6 +374,8 @@ export async function POST(req: Request) {
                     const input = block.input as { category?: string; note?: string };
                     await saveMemory(input.category ?? 'note', input.note ?? '');
                     result = 'Saved to coach memory.';
+                  } else if (block.name === 'suggest_route') {
+                    result = await runSuggestRoute(block.input as Parameters<typeof runSuggestRoute>[0]);
                   } else {
                     const raw = await executeTool(
                       block.name,
