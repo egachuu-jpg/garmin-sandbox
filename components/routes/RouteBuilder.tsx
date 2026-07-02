@@ -166,15 +166,23 @@ export default function RouteBuilder() {
   const center = startPoint ?? { lat: 44.95, lng: -93.27 }; // Twin Cities fallback until a place is saved
 
   const loadPlaces = useCallback(async () => {
-    const res = await fetch('/api/places');
-    const json = await res.json();
-    setPlaces(json.places ?? []);
+    try {
+      const res = await fetch('/api/places');
+      const json = await res.json();
+      setPlaces(json.places ?? []);
+    } catch {
+      /* map still works without places */
+    }
   }, []);
 
   const loadSaved = useCallback(async () => {
-    const res = await fetch('/api/routes');
-    const json = await res.json();
-    setSavedRoutes(json.routes ?? []);
+    try {
+      const res = await fetch('/api/routes');
+      const json = await res.json();
+      setSavedRoutes(json.routes ?? []);
+    } catch {
+      /* list stays empty */
+    }
   }, []);
 
   useEffect(() => {

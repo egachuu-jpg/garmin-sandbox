@@ -188,7 +188,10 @@ export function RouteMap({
 
   return (
     <div className="relative w-full h-full rounded-2xl overflow-hidden border border-surface-border">
-      <div ref={containerRef} className="absolute inset-0 [&_.maplibregl-canvas]:brightness-[.85]" />
+      {/* Explicit h-full, not absolute inset-0: MapLibre forces `position:
+          relative` on its container via .maplibregl-map, which cancels
+          Tailwind's `absolute` and collapses the div to 0 height. */}
+      <div ref={containerRef} className="w-full h-full [&_.maplibregl-canvas]:brightness-[.85]" />
     </div>
   );
 }
