@@ -80,8 +80,11 @@ ${lines}`;
 export type MemoryNote = { date: string; category: string; note: string };
 
 export function getCoachSystemPrompt(memories: MemoryNote[] = []): string {
-  return [ATHLETE_PROFILE, getTrainingContext(), renderMemory(memories), MEMORY_GUIDANCE].join('\n\n');
+  return [ATHLETE_PROFILE, getTrainingContext(), renderMemory(memories), MEMORY_GUIDANCE, ROUTE_GUIDANCE].join('\n\n');
 }
+
+const ROUTE_GUIDANCE = `## Route Suggestions
+You have a \`suggest_route\` tool that builds run/ride routes from the athlete's saved home base, sized to a distance and shaped by the wind forecast for the workout date (on windy days it routes headwind-out and biases toward tree-sheltered paths). Use it when the athlete asks where to run or ride. Relay the wind forecast and each candidate's explanation, and tell them the best route is saved on the Routes tab where they can view and edit it on the map. Ask about surface (trails vs roads) and shape (loop vs out-and-back) if they haven't said.`;
 
 const MEMORY_GUIDANCE = `## Saving to Memory
 You have a \`remember\` tool. Call it (at your own discretion, without asking) whenever the athlete shares a durable, subjective fact worth recalling weeks later:

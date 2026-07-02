@@ -47,6 +47,39 @@ CREATE TABLE IF NOT EXISTS coach_memory (
   created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- Route builder: named start points for suggested routes (home, gym, trailhead).
+-- Exactly one row should have is_default = TRUE; suggestions start there unless
+-- the user overrides on the map.
+CREATE TABLE IF NOT EXISTS saved_places (
+  id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  name        TEXT        NOT NULL,
+  lat         DOUBLE PRECISION NOT NULL,
+  lng         DOUBLE PRECISION NOT NULL,
+  is_default  BOOLEAN     NOT NULL DEFAULT FALSE,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Route builder: saved routes (AI-suggested or hand-drawn). geojson holds a
+-- GeoJSON LineString ([lng,lat,ele] coords); waypoints holds the editable
+-- control points ({lat,lng}[]) the editor re-snaps through; wind is a snapshot
+-- of the forecast used when the route was generated (null for manual routes).
+CREATE TABLE IF NOT EXISTS routes (
+  id              UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  name            TEXT        NOT NULL,
+  sport           TEXT        NOT NULL CHECK (sport IN ('running', 'cycling')),
+  workout_date    DATE,
+  distance_meters NUMERIC(10,1) NOT NULL,
+  ascent_meters   NUMERIC(10,1),
+  geojson         JSONB       NOT NULL,
+  waypoints       JSONB,
+  prefs           JSONB,
+  wind            JSONB,
+  source          TEXT        NOT NULL DEFAULT 'manual' CHECK (source IN ('suggested', 'manual')),
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(conversation_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_routes_created ON routes(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_conversations_updated ON conversations(updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_coach_memory_created ON coach_memory(created_at DESC);

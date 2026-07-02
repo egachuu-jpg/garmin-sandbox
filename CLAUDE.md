@@ -39,6 +39,7 @@ Copy `.env.example` to `.env` for local development:
 | `GARMIN_EMAIL` / `GARMIN_PASSWORD` | Garmin Connect credentials |
 | `ANTHROPIC_API_KEY` | Anthropic API key |
 | `PYTHON_BIN` | Path to Python with `garmin_mcp` installed (defaults to `python`; Railway uses `/opt/venv/bin/python`) |
+| `ORS_API_KEY` | OpenRouteService key for the route builder (free at openrouteservice.org) |
 | `GARMINTOKENS` | Volume path for Garmin OAuth token cache (Railway only: `/root/.garmin-mcp`) |
 
 ## Architecture
@@ -52,7 +53,10 @@ Browser → middleware.ts (session auth)
          ├── /api/chat      → Anthropic agentic loop (SSE stream)
          ├── /api/dashboard → Garmin readiness snapshot
          ├── /api/workouts  → Garmin scheduled workouts
-         └── /api/gear      → Shoe mileage tracking (DB + Garmin)
+         ├── /api/gear      → Shoe mileage tracking (DB + Garmin)
+         ├── /api/routes    → Route builder: CRUD + /suggest + /directions (OpenRouteService)
+         ├── /api/places    → Saved start points for route suggestions
+         └── /api/wind      → Open-Meteo wind forecast (keyless)
        → lib/mcp-client.ts (singleton MCP client → Python garmin_mcp subprocess)
        → lib/db.ts          (PostgreSQL pool)
 ```
@@ -77,12 +81,18 @@ Tool names follow the pattern `{serverId}__{toolName}` (e.g. `taxuspt__get_activ
 
 ### Database Schema (`db/schema.sql`)
 
-Five tables:
+Seven tables:
 - **conversations** — chat sessions (UUID, title, timestamps)
 - **messages** — individual turns; `raw_content` (JSONB) holds the full `MessageParam[]` array including interleaved `tool_result` messages so the conversation can be replayed to Anthropic without breaking tool-use pairing. `tool_calls` (JSONB) is a UI-facing summary only.
 - **gear** — running shoes with `mileage_offset` and `alert_threshold_miles` (default 400)
 - **activity_gear** — links Garmin activity IDs to gear rows
 - **coach_memory** — durable subjective notes (injuries, preferences, decisions) the coach saves via the synthetic `remember` tool
+- **saved_places** — named start points for the route builder (one `is_default` home base)
+- **routes** — saved routes: GeoJSON LineString + editable waypoints, stats, prefs, and a wind-forecast snapshot; `source` is `suggested` or `manual`
+
+### Route Builder (`app/routes`, `lib/route-suggest.ts`)
+
+The Routes tab suggests wind-aware run/ride routes and lets the athlete draw them by hand. Server pieces: `lib/ors.ts` (OpenRouteService client — profiles, round-trip loops, green/quiet weightings), `lib/wind.ts` (Open-Meteo daily forecast, keyless), `lib/geo.ts` (bearing/headwind-exposure math), `lib/route-suggest.ts` (candidate generation + scoring + explanations). Wind only reshapes routes when sustained wind ≥ 12 mph (`WINDY_THRESHOLD_MPH`): out-and-backs point into the wind, foot profiles get ORS `green` weighting as a tree-shelter proxy, and loops are ranked by late-route headwind exposure. The map is MapLibre GL over free OSM raster tiles (`components/routes/RouteMap.tsx`), client-only (`ssr: false`). The chat coach has a synthetic `suggest_route` tool that runs the same engine from the default saved place and saves the best candidate.
 
 ### Coach System Prompt (`lib/coach-prompt.ts`)
 
