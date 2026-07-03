@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Wind, MapPin, Locate, Trash2, Undo2, RotateCcw, Pencil, Save, Sparkles, X } from 'lucide-react';
+import { Wind, MapPin, Locate, Trash2, Undo2, RotateCcw, Pencil, Save, Sparkles, Star, Check, X } from 'lucide-react';
 import { RouteMap, type MapLine, type MapPoint } from './RouteMap';
 
 const MI = 1609.34;
@@ -128,6 +128,9 @@ export default function RouteBuilder() {
   const [addingPlace, setAddingPlace] = useState(false);
   const [pendingPin, setPendingPin] = useState<MapPoint | null>(null);
   const [placeName, setPlaceName] = useState('');
+  const [managingPlaces, setManagingPlaces] = useState(false);
+  const [editingPlaceId, setEditingPlaceId] = useState<string | null>(null);
+  const [editPlaceName, setEditPlaceName] = useState('');
 
   // Suggest
   const [workouts, setWorkouts] = useState<Workout[]>([]);
@@ -326,7 +329,34 @@ export default function RouteBuilder() {
     );
   };
 
-  // Map content per mode
+  const setDefaultPlace = async (id: string) => {
+    await fetch('/api/places', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, makeDefault: true }),
+    });
+    loadPlaces();
+  };
+
+  const renamePlace = async () => {
+    if (!editingPlaceId || !editPlaceName.trim()) return;
+    await fetch('/api/places', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: editingPlaceId, name: editPlaceName.trim() }),
+    });
+    setEditingPlaceId(null);
+    loadPlaces();
+  };
+
+  const deletePlace = async (id: string) => {
+    await fetch(`/api/places?id=${id}`, { method: 'DELETE' });
+    if (startPlaceId === id) setStartPlaceId(null);
+    loadPlaces();
+  };
+
+  // Map content per mode. While managing places, hide route lines so tapping a
+  // place centers the viewport on its pin instead of refitting to the route.
   let lines: MapLine[] = [];
   if (mode === 'suggest' && result) {
     lines = result.candidates.map((c, i) => ({
@@ -348,12 +378,12 @@ export default function RouteBuilder() {
     <div className="flex flex-col gap-3">
       <div className="h-[42vh] min-h-[280px]">
         <RouteMap
-          lines={lines}
-          waypoints={mode === 'draw' ? waypoints : []}
+          lines={managingPlaces ? [] : lines}
+          waypoints={mode === 'draw' && !managingPlaces ? waypoints : []}
           startPin={startPoint}
           pendingPin={pendingPin}
           center={center}
-          fitKey={`${mode}-${fitKey}-${selCand}-${selSavedId ?? ''}`}
+          fitKey={`${mode}-${fitKey}-${selCand}-${selSavedId ?? ''}-${managingPlaces}-${startPlace?.id ?? ''}`}
           onMapClick={handleMapClick}
           onWaypointMove={(i, p) => setWaypoints(w => w.map((x, j) => (j === i ? p : x)))}
           onWaypointTap={i => setWaypoints(w => w.filter((_, j) => j !== i))}
@@ -409,7 +439,71 @@ export default function RouteBuilder() {
             <Chip active={addingPlace} onClick={() => setAddingPlace(a => !a)}>
               + Save a place
             </Chip>
+            {places.length > 0 && (
+              <Chip active={managingPlaces} onClick={() => setManagingPlaces(m => !m)}>
+                Manage
+              </Chip>
+            )}
           </div>
+          {managingPlaces && (
+            <div className="pt-1">
+              <p className="text-[11px] text-muted mb-1">Tap a place to see it on the map. ★ sets the default start.</p>
+              {places.map(p => (
+                <div key={p.id} className="flex items-center gap-2.5 py-2 border-t border-surface-border">
+                  {editingPlaceId === p.id ? (
+                    <>
+                      <input
+                        value={editPlaceName}
+                        onChange={e => setEditPlaceName(e.target.value)}
+                        autoFocus
+                        className="flex-1 min-w-0 bg-surface border border-surface-border rounded-lg px-2 py-1.5 text-sm outline-none focus:border-primary"
+                      />
+                      <button onClick={renamePlace} aria-label="Save name" className="p-1">
+                        <Check size={17} className="text-primary" />
+                      </button>
+                      <button onClick={() => setEditingPlaceId(null)} aria-label="Cancel rename" className="p-1">
+                        <X size={16} className="text-muted" />
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <button
+                        onClick={() => {
+                          setStartPlaceId(p.id);
+                          setCustomStart(null);
+                          bumpFit();
+                        }}
+                        className="flex-1 min-w-0 text-left"
+                      >
+                        <span className={`block text-sm truncate ${startPlace?.id === p.id && !customStart ? 'text-primary font-medium' : ''}`}>
+                          {p.name}
+                        </span>
+                        <span className="block text-[10px] text-muted">
+                          {p.lat.toFixed(4)}, {p.lng.toFixed(4)}
+                        </span>
+                      </button>
+                      <button onClick={() => setDefaultPlace(p.id)} aria-label="Set as default" className="p-1">
+                        <Star size={17} className={p.is_default ? 'text-amber-400 fill-amber-400' : 'text-muted'} />
+                      </button>
+                      <button
+                        onClick={() => {
+                          setEditingPlaceId(p.id);
+                          setEditPlaceName(p.name);
+                        }}
+                        aria-label="Rename"
+                        className="p-1"
+                      >
+                        <Pencil size={15} className="text-muted" />
+                      </button>
+                      <button onClick={() => deletePlace(p.id)} aria-label="Delete place" className="p-1">
+                        <Trash2 size={15} className="text-red-400" />
+                      </button>
+                    </>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
           {places.length === 0 && !addingPlace && (
             <p className="text-xs text-amber-400">Save a home-base place first — suggestions start from it.</p>
           )}

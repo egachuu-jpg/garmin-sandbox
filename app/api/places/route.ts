@@ -37,11 +37,16 @@ export async function POST(req: Request) {
 }
 
 export async function PUT(req: Request) {
-  // Set a place as the default start point.
-  const { id } = await req.json();
+  // Update a place: rename and/or make it the default start point.
+  const { id, name, makeDefault } = await req.json();
   if (typeof id !== 'string') return NextResponse.json({ error: 'id required' }, { status: 400 });
-  await query(`UPDATE saved_places SET is_default = FALSE`);
-  await query(`UPDATE saved_places SET is_default = TRUE WHERE id = $1`, [id]);
+  if (typeof name === 'string' && name.trim()) {
+    await query(`UPDATE saved_places SET name = $1 WHERE id = $2`, [name.trim(), id]);
+  }
+  if (makeDefault === true) {
+    await query(`UPDATE saved_places SET is_default = FALSE`);
+    await query(`UPDATE saved_places SET is_default = TRUE WHERE id = $1`, [id]);
+  }
   return NextResponse.json({ ok: true });
 }
 
