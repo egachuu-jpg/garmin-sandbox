@@ -90,7 +90,11 @@ Seven tables:
 - **saved_places** — named start points for the route builder (one `is_default` home base)
 - **routes** — saved routes: GeoJSON LineString + editable waypoints, stats, prefs, and a wind-forecast snapshot; `source` is `suggested` or `manual`
 
-### Route Builder (`app/routes`, `lib/route-suggest.ts`)
+### Pages & Navigation
+
+Signed-in pages live in the `app/(app)/` route group, whose layout renders the shared `BottomNav` (four tabs: Home `/`, Coach `/chat`, Training `/training`, Routes `/routes`). `/training` merges the old Workouts and Plan tabs (Schedule / Plan / Gear segments); the old Reports tab became one-tap report prompts in the chat empty state. `/plan`, `/workouts`, and `/reports` remain as redirect stubs. UX/architecture backlog lives in `TODO.md`.
+
+### Route Builder (`app/(app)/routes`, `lib/route-suggest.ts`)
 
 The Routes tab suggests wind-aware run/ride routes and lets the athlete draw them by hand. Server pieces: `lib/ors.ts` (OpenRouteService client — profiles, round-trip loops, green/quiet weightings), `lib/wind.ts` (Open-Meteo daily forecast, keyless), `lib/geo.ts` (bearing/headwind-exposure math), `lib/route-suggest.ts` (candidate generation + scoring + explanations). Wind only reshapes routes when sustained wind ≥ 12 mph (`WINDY_THRESHOLD_MPH`): out-and-backs point into the wind, foot profiles get ORS `green` weighting as a tree-shelter proxy, and loops are ranked by late-route headwind exposure. The map is MapLibre GL over free OSM raster tiles (`components/routes/RouteMap.tsx`), client-only (`ssr: false`). The chat coach has a synthetic `suggest_route` tool that runs the same engine from the default saved place and saves the best candidate.
 

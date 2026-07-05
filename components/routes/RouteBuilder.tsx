@@ -140,6 +140,9 @@ export default function RouteBuilder() {
   const [genError, setGenError] = useState('');
   const [result, setResult] = useState<SuggestResponse | null>(null);
   const [selCand, setSelCand] = useState(0);
+  // After generating, collapse the request form to a one-line summary so the
+  // map + candidates fit on screen without scrolling past all the controls.
+  const [formCollapsed, setFormCollapsed] = useState(false);
 
   // Draw / edit
   const [waypoints, setWaypoints] = useState<MapPoint[]>([]);
@@ -151,6 +154,8 @@ export default function RouteBuilder() {
   // Saved
   const [savedRoutes, setSavedRoutes] = useState<SavedRoute[]>([]);
   const [selSavedId, setSelSavedId] = useState<string | null>(null);
+  // Two-step delete: first tap arms, second tap deletes.
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
   // Save-name dialog: startSave() stashes the route body and opens the sheet;
   // confirmSave() posts it under whatever name the user settled on.
@@ -271,6 +276,7 @@ export default function RouteBuilder() {
       if (json.error) throw new Error(json.error);
       setResult(json);
       setSelCand(0);
+      setFormCollapsed(true);
       bumpFit();
     } catch (err) {
       setGenError(String(err instanceof Error ? err.message : err));
@@ -382,8 +388,9 @@ export default function RouteBuilder() {
         ))}
       </div>
 
-      {/* Start point + places (shared by suggest & draw) */}
-      {mode !== 'saved' && (
+      {/* Start point + places (shared by suggest & draw; hidden while the
+          suggest form is collapsed — the summary row carries the start name) */}
+      {mode !== 'saved' && !(mode === 'suggest' && formCollapsed && result) && (
         <div className="bg-surface-card border border-surface-border rounded-2xl p-3 space-y-2">
           <p className="text-xs text-muted font-medium flex items-center gap-1.5">
             <MapPin size={13} /> Start point
@@ -440,7 +447,22 @@ export default function RouteBuilder() {
       )}
 
       {/* SUGGEST MODE */}
-      {mode === 'suggest' && (
+      {mode === 'suggest' && formCollapsed && result && (
+        <button
+          onClick={() => setFormCollapsed(false)}
+          className="flex items-center justify-between gap-3 bg-surface-card border border-surface-border rounded-2xl px-4 py-3 text-left"
+        >
+          <p className="text-sm min-w-0 truncate">
+            {sport === 'running' ? 'Run' : 'Ride'} · {distanceMi} mi · {fmtWorkoutDate(date)}
+            <span className="text-muted"> · from {customStart ? 'pinned start' : startPlace?.name ?? 'start'}</span>
+          </p>
+          <span className="flex items-center gap-1 text-xs text-primary font-medium flex-shrink-0">
+            <Pencil size={13} /> Edit
+          </span>
+        </button>
+      )}
+
+      {mode === 'suggest' && !(formCollapsed && result) && (
         <>
           <div className="bg-surface-card border border-surface-border rounded-2xl p-3 space-y-3">
             <p className="text-xs text-muted font-medium">Workout</p>
@@ -510,7 +532,11 @@ export default function RouteBuilder() {
             </button>
             {genError && <p className="text-xs text-red-400">{genError}</p>}
           </div>
+        </>
+      )}
 
+      {mode === 'suggest' && (
+        <>
           {result && <WindCard wind={result.wind} windy={result.windy} date={date} />}
 
           {result?.candidates.map((c, i) => (
@@ -650,6 +676,7 @@ export default function RouteBuilder() {
               key={r.id}
               onClick={() => {
                 setSelSavedId(r.id);
+                setConfirmDeleteId(null);
                 bumpFit();
               }}
               className={`text-left bg-surface-card border rounded-2xl p-3 ${
@@ -690,13 +717,20 @@ export default function RouteBuilder() {
                     role="button"
                     onClick={async e => {
                       e.stopPropagation();
+                      if (confirmDeleteId !== r.id) {
+                        setConfirmDeleteId(r.id);
+                        return;
+                      }
                       await fetch(`/api/routes/${r.id}`, { method: 'DELETE' });
+                      setConfirmDeleteId(null);
                       setSelSavedId(null);
                       loadSaved();
                     }}
-                    className="flex items-center gap-1 text-xs text-red-400 font-medium"
+                    className={`flex items-center gap-1 text-xs font-medium ${
+                      confirmDeleteId === r.id ? 'text-red-400 bg-red-950/60 border border-red-800/50 rounded-lg px-2 py-1' : 'text-red-400'
+                    }`}
                   >
-                    <Trash2 size={13} /> Delete
+                    <Trash2 size={13} /> {confirmDeleteId === r.id ? 'Tap again to delete' : 'Delete'}
                   </span>
                 </div>
               )}

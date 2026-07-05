@@ -1,7 +1,6 @@
 'use client';
 
 import dynamic from 'next/dynamic';
-import { BottomNav } from '@/components/nav/BottomNav';
 
 // MapLibre needs the browser (WebGL, window) — skip SSR for the whole builder.
 const RouteBuilder = dynamic(() => import('@/components/routes/RouteBuilder'), {
@@ -18,7 +17,6 @@ export default function RoutesPage() {
       <div className="flex-1 px-4 mt-2">
         <RouteBuilder />
       </div>
-      <BottomNav />
     </div>
   );
 }

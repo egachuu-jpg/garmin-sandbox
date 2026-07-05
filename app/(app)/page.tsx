@@ -1,6 +1,5 @@
 import Link from 'next/link';
 import { ChevronRight } from 'lucide-react';
-import { BottomNav } from '@/components/nav/BottomNav';
 import { getPlanContext } from '@/lib/training';
 import { getDayWorkout } from '@/lib/plan-schedule';
 import { ReadinessPanel } from '@/components/home/ReadinessPanel';
@@ -51,8 +50,6 @@ export default function HomePage() {
           <ChevronRight size={18} className="text-primary flex-shrink-0" />
         </Link>
       </div>
-
-      <BottomNav />
     </div>
   );
 }
