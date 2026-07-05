@@ -58,6 +58,8 @@ export function ReadinessPanel() {
   const [data, setData] = useState<Dashboard | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
+  // Set when the service worker served its offline snapshot (x-sw-fetched-at).
+  const [staleAsOf, setStaleAsOf] = useState<string | null>(null);
 
   // Tapping a tile tells the story of that data point inline — no chat
   // navigation. Only one metric is expanded at a time; insights are cached
@@ -75,6 +77,7 @@ export function ReadinessPanel() {
     try {
       const res = await fetch('/api/dashboard');
       if (!res.ok) throw new Error('bad status');
+      setStaleAsOf(res.headers.get('x-sw-fetched-at'));
       setData(await res.json());
     } catch {
       setError(true);
@@ -134,6 +137,21 @@ export function ReadinessPanel() {
 
   return (
     <>
+      {/* Offline snapshot notice */}
+      {staleAsOf && (
+        <div className="bg-amber-950/50 border border-amber-800/50 rounded-xl px-3 py-2 text-xs text-amber-400">
+          Offline — showing data from{' '}
+          {new Date(staleAsOf).toLocaleString('en-US', {
+            timeZone: 'America/Chicago',
+            month: 'short',
+            day: 'numeric',
+            hour: 'numeric',
+            minute: '2-digit',
+          })}
+          . Tap refresh when you&apos;re back online.
+        </div>
+      )}
+
       {/* Readiness card */}
       <div className="bg-surface-card border border-surface-border rounded-2xl p-5">
         <div className="flex items-center justify-between mb-1">

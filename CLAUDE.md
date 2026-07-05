@@ -96,6 +96,10 @@ Seven tables:
 - **saved_places** — named start points for the route builder (one `is_default` home base)
 - **routes** — saved routes: GeoJSON LineString + editable waypoints, stats, prefs, and a wind-forecast snapshot; `source` is `suggested` or `manual`
 
+### Offline Shell (`public/sw.js`)
+
+A hand-rolled service worker (registered by `components/pwa/RegisterSW.tsx`, production only) caches the app shell for offline launches: pages are network-first (deploys always win), `/_next/static` is cache-first (content-hashed), and `/api/dashboard` responses are snapshotted with an `x-sw-fetched-at` header that `ReadinessPanel` renders as an offline banner. Invariants documented in the file: never intercept non-GET or `text/event-stream` (the chat SSE turn), never cache redirects (login), and offline navigation to an uncached page redirects to `/` rather than serving home HTML under a foreign URL (Next hydrates against the address bar). `/sw.js` is excluded from the auth middleware so the browser's SW update checks survive cookie expiry. Note when testing: Playwright's `setOffline` does not apply to fetches made *inside* a service worker — kill the server to test offline behavior.
+
 ### Pages & Navigation
 
 Signed-in pages live in the `app/(app)/` route group, whose layout renders the shared `BottomNav` (four tabs: Home `/`, Coach `/chat`, Training `/training`, Routes `/routes`). `/training` merges the old Workouts and Plan tabs (Schedule / Plan / Gear segments); the old Reports tab became one-tap report prompts in the chat empty state. `/plan`, `/workouts`, and `/reports` remain as redirect stubs. UX/architecture backlog lives in `TODO.md`.

@@ -30,9 +30,6 @@ delete confirmation, Plan week math unified on `getPlanContext()`.
       flat with no "today" anchor.
 - [ ] **Make Plan week rows tappable** — seed chat with "What's Week N look
       like?" (only the current week has a Details link today).
-- [ ] **Routes: bottom-sheet layout** — full-height map with controls in a
-      draggable sheet (the standard map UX); the collapse-after-generate is
-      a stopgap.
 - [ ] **Fix nested interactive elements in RouteBuilder** — candidate/saved
       cards are `<button>`s containing `role="button"` spans.
 - [ ] **Bump under-sized touch targets to ~44px** — preference `Chip`s
@@ -47,9 +44,13 @@ delete confirmation, Plan week math unified on `getPlanContext()`.
       plain "Loading gear…" text.
 - [ ] **Unify icon language** — lucide for functional icons; emoji only as
       decoration (login, race day).
-- [ ] **Offline PWA shell** — add a service worker that caches the app shell
-      and the last dashboard snapshot ("as of 7:02 AM") so launching without
-      signal doesn't show a browser error page.
+
+Done (July 2026): Routes bottom-sheet layout (full-height map, drag-handle-only
+sheet in `components/routes/BottomSheet.tsx`); offline PWA shell
+(`public/sw.js` + `RegisterSW`) — network-first pages, cache-first hashed
+assets, `/api/dashboard` snapshot stamped `x-sw-fetched-at` for the offline
+banner, `/api/chat` never intercepted, `/sw.js` excluded from auth middleware
+so the SW update cycle survives cookie expiry.
 
 ## Architecture / backend
 
