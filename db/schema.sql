@@ -14,8 +14,15 @@ CREATE TABLE IF NOT EXISTS messages (
   text            TEXT        NOT NULL,
   raw_content     JSONB,
   tool_calls      JSONB,
+  -- FALSE while an assistant turn is still being streamed/persisted round by
+  -- round; flipped TRUE when the agentic loop finishes (or fails). Lets the
+  -- client poll distinguish "reply in progress" from "reply done".
+  completed       BOOLEAN     NOT NULL DEFAULT TRUE,
   created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- Idempotent upgrade for databases created before the completed column existed.
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS completed BOOLEAN NOT NULL DEFAULT TRUE;
 
 CREATE TABLE IF NOT EXISTS gear (
   id                   UUID     PRIMARY KEY DEFAULT gen_random_uuid(),

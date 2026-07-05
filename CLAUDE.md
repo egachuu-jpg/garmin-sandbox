@@ -61,19 +61,25 @@ Browser → middleware.ts (session auth)
        → lib/db.ts          (PostgreSQL pool)
 ```
 
-### Agentic Loop (`app/api/chat/route.ts`)
+### Agentic Loop (`lib/agent.ts`, SSE wrapper in `app/api/chat/route.ts`)
 
-This is the core of the app. A single POST request starts an **infinite loop** that:
+This is the core of the app. `runCoachTurn()` in `lib/agent.ts` runs a loop (capped at 25 rounds) that:
 1. Calls `anthropic.messages.stream(...)` with the full history + tools
-2. Streams text chunks and tool events to the client via SSE (`data: <json>\n\n`)
-3. If `stop_reason === 'tool_use'`, executes all tool calls in parallel via `executeTool()`, appends `tool_result` messages, and loops again
-4. Exits when Claude returns without tool calls, then persists the full turn to the DB
+2. Streams text chunks and tool events via a `send` callback; the API route forwards them to the client as SSE (`data: <json>\n\n`)
+3. If `stop_reason === 'tool_use'`, executes all tool calls in parallel (synthetic tools from `lib/coach-tools.ts` first, else `executeTool()`), appends `tool_result` messages, and loops again
+4. Exits when Claude returns without tool calls
 
-**Prompt caching** is applied to both the system prompt and the tool list (marked `cache_control: { type: 'ephemeral' }`). This is critical — the ~60-tool schema list is large enough to hit Anthropic ITPM rate limits on every turn if uncached.
+**Per-round persistence**: a placeholder assistant row (`completed = FALSE`) is inserted before the first model call and UPDATEd after every stream round and tool batch, then flipped to `completed = TRUE` at the end. A crash mid-turn leaves a visible partial turn rather than hiding committed side effects; `repairToolPairing()` patches placeholder tool_results for any dangling tool_use on replay. The client polls `/api/messages/[id]` until the last assistant row is `completed` (used after Stop and after navigating away mid-turn) — **the API route deliberately does NOT abort the turn on client disconnect** for this reason.
+
+**Synthetic tools** (`lib/coach-tools.ts`): app-implemented tools (`remember`, `suggest_route`) registered in `SYNTHETIC_TOOLS`; add an entry there to give the coach a new non-MCP tool.
+
+**Prompt caching**: the system prompt, the tool list, and the last message block are all marked `cache_control: { type: 'ephemeral' }`, so loop rounds re-read the schemas *and* conversation history from cache. This is critical — the ~60-tool schema list is large enough to hit Anthropic ITPM rate limits on every turn if uncached. The per-round usage log prints `cache_read`/`cache_write`; if `cache_read` stays 0 across rounds, caching is broken.
+
+**Tool-result elision**: on replay, tool_result *content* older than the 3 most recent assistant turns is replaced with a placeholder (blocks are kept so pairing stays valid) — old raw Garmin payloads dominate token volume but carry no durable value (that's what coach memory is for).
 
 ### MCP Client (`lib/mcp-client.ts`)
 
-The Garmin MCP is a Python subprocess (`python -m garmin_mcp`) launched via `StdioClientTransport`. The `Client` instance is a **process-level singleton** (stored in a `Map`) — it is not recreated per request.
+The Garmin MCP is a Python subprocess (`python -m garmin_mcp`) launched via `StdioClientTransport`. The connection promise is a **process-level singleton** (stored in a `Map`) — concurrent cold-start requests share one spawn, and the entry is **evicted on transport close** so a crashed subprocess reconnects on the next call instead of poisoning every request until restart.
 
 Tool names follow the pattern `{serverId}__{toolName}` (e.g. `taxuspt__get_activities`). `executeTool()` splits on `__` to route to the right server.
 
@@ -83,7 +89,7 @@ Tool names follow the pattern `{serverId}__{toolName}` (e.g. `taxuspt__get_activ
 
 Seven tables:
 - **conversations** — chat sessions (UUID, title, timestamps)
-- **messages** — individual turns; `raw_content` (JSONB) holds the full `MessageParam[]` array including interleaved `tool_result` messages so the conversation can be replayed to Anthropic without breaking tool-use pairing. `tool_calls` (JSONB) is a UI-facing summary only.
+- **messages** — individual turns; `raw_content` (JSONB) holds the full `MessageParam[]` array including interleaved `tool_result` messages so the conversation can be replayed to Anthropic without breaking tool-use pairing. `tool_calls` (JSONB) is a UI-facing summary only. `completed` is FALSE while an assistant turn is still being persisted round by round (clients poll on it).
 - **gear** — running shoes with `mileage_offset` and `alert_threshold_miles` (default 400)
 - **activity_gear** — links Garmin activity IDs to gear rows
 - **coach_memory** — durable subjective notes (injuries, preferences, decisions) the coach saves via the synthetic `remember` tool
@@ -126,7 +132,7 @@ The chat API streams newline-delimited `data:` events. The client in `components
 - **`pg` and `@modelcontextprotocol/sdk` must remain server-side only.** `next.config.ts` marks them as `serverExternalPackages` to prevent Next.js from bundling them into the client.
 - **`curl_cffi` requires `libstdc++.so.6` on `LD_LIBRARY_PATH` at runtime.** `start.sh` resolves this path via `find` and exports it before starting Next. Without it, the Python MCP subprocess crashes silently and all Garmin tools fail.
 - **Garmin OAuth tokens are cached to a Railway volume** (`GARMINTOKENS=/root/.garmin-mcp`). After a fresh deploy, the first request triggers an interactive MFA flow in the Railway shell (`railway run python -m garmin_mcp`). Without the volume mount, tokens are lost on each redeploy.
-- **`raw_content` format changed**: older messages stored `ContentBlock[]` (assistant only); newer messages store `MessageParam[]` (assistant + tool_result pairs). `buildAnthropicMessages()` in the chat route handles both formats.
+- **`raw_content` format changed**: older messages stored `ContentBlock[]` (assistant only); newer messages store `MessageParam[]` (assistant + tool_result pairs). `buildAnthropicMessages()` in `lib/agent.ts` handles both formats.
 
 ## Deployment (Railway)
 

@@ -11,7 +11,19 @@ type InitialMessage = {
   role: string;
   text: string;
   tool_calls: ToolCall[] | null;
+  completed?: boolean;
 };
+
+// DB rows store tool_calls as {id, name, result} — derive the UI status the
+// live stream would have shown (otherwise reloaded chips render as failed).
+function normalizeToolCalls(raw: unknown): ToolCall[] | undefined {
+  if (!Array.isArray(raw) || raw.length === 0) return undefined;
+  return (raw as Array<{ id: string; name: string; status?: ToolCall['status']; result?: string }>).map(tc => ({
+    id: tc.id,
+    name: tc.name,
+    status: tc.status ?? (typeof tc.result === 'string' && tc.result.startsWith('Error') ? 'error' : 'done'),
+  }));
+}
 
 type Props = {
   conversationId: string;
@@ -56,22 +68,24 @@ const REPORT_PROMPTS = [
 ];
 
 export function ChatInterface({ conversationId, initialMessages = [], seedPrompt }: Props) {
-  // If we mounted with the last message being a user message it means the user
-  // navigated away while the coach was still responding. The server will finish
-  // the agentic loop and save the reply to the DB regardless — we just need to
-  // poll until it appears.
+  // The reply is still being produced server-side if the last row is the
+  // user's message (assistant row not inserted yet) or an assistant row that
+  // was persisted mid-turn (completed = false). Either way the server finishes
+  // the agentic loop and saves round by round — we just poll until it's done.
+  const lastInitial = initialMessages[initialMessages.length - 1];
   const pendingOnMount =
-    initialMessages.length > 0 &&
-    initialMessages[initialMessages.length - 1].role === 'user';
+    !!lastInitial && (lastInitial.role === 'user' || lastInitial.completed === false);
 
   const [messages, setMessages] = useState<Message[]>(() => {
     const base: Message[] = initialMessages.map(m => ({
       id: m.id,
       role: m.role as 'user' | 'assistant',
       text: m.text,
-      toolCalls: m.tool_calls ?? undefined,
+      toolCalls: normalizeToolCalls(m.tool_calls),
+      // A mid-turn assistant row shows its partial text with the streaming cursor.
+      streaming: m.completed === false,
     }));
-    if (pendingOnMount) {
+    if (pendingOnMount && lastInitial?.role === 'user') {
       base.push({ id: PENDING_ID, role: 'assistant', text: '', toolCalls: [], streaming: true });
     }
     return base;
@@ -108,9 +122,10 @@ export function ChatInterface({ conversationId, initialMessages = [], seedPrompt
       try {
         const res = await fetch(`/api/messages/${conversationId}`);
         if (!res.ok) return;
-        const rows: Array<{ id: string; role: string; text: string; tool_calls: unknown }> =
+        const rows: Array<{ id: string; role: string; text: string; tool_calls: unknown; completed?: boolean }> =
           await res.json();
-        if (rows[rows.length - 1]?.role === 'assistant') {
+        const last = rows[rows.length - 1];
+        if (last?.role === 'assistant' && last.completed !== false) {
           if (pollingRef.current) clearInterval(pollingRef.current);
           pollingRef.current = null;
           setMessages(
@@ -118,7 +133,7 @@ export function ChatInterface({ conversationId, initialMessages = [], seedPrompt
               id: m.id,
               role: m.role as 'user' | 'assistant',
               text: m.text,
-              toolCalls: (m.tool_calls as ToolCall[] | null) ?? undefined,
+              toolCalls: normalizeToolCalls(m.tool_calls),
             }))
           );
           setStreaming(false);

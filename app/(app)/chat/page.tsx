@@ -9,11 +9,11 @@ export const dynamic = 'force-dynamic';
 
 type SearchParams = { id?: string; prompt?: string; new?: string };
 
-type MsgRow = { id: string; role: string; text: string; tool_calls: unknown };
+type MsgRow = { id: string; role: string; text: string; tool_calls: unknown; completed: boolean };
 
 const loadMessages = (conversationId: string) =>
   query<MsgRow>(
-    `SELECT id, role, text, tool_calls FROM messages
+    `SELECT id, role, text, tool_calls, completed FROM messages
      WHERE conversation_id = $1 ORDER BY created_at ASC`,
     [conversationId]
   );

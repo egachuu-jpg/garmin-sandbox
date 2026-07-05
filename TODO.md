@@ -53,18 +53,18 @@ delete confirmation, Plan week math unified on `getPlanContext()`.
 
 ## Architecture / backend
 
-- [ ] **Persist the agentic turn per-round** in `app/api/chat/route.ts` —
-      insert the assistant row up front and append after each tool round, so
-      a mid-turn crash can't leave invisible side effects (workout scheduled,
-      memory saved) with no chat record. Then delete `repairToolPairing()`.
-- [ ] **Cap the agentic loop** (e.g. 25 rounds) and honor `req.signal`.
-- [ ] **Elide old tool_result bodies on replay** — keep the blocks for
-      pairing validity but replace content beyond the last N turns with a
-      placeholder; unbounded conversations currently replay every raw Garmin
-      payload forever.
+Done (July 2026): agent loop extracted to `lib/agent.ts` with a synthetic-tool
+registry (`lib/coach-tools.ts`); per-round turn persistence with a `completed`
+column (run `npm run db:migrate` after deploying); 25-round loop cap;
+tool-result elision beyond the last 3 turns + a cache breakpoint on the last
+message; MCP client eviction on subprocess death. Note: `repairToolPairing()`
+was kept deliberately — it's now the *designed* recovery path for replaying
+turns that crashed between persisting a round and its tool results.
+
 - [ ] **Unit tests over the pure logic** (vitest): `repairToolPairing`,
-      `buildAnthropicMessages`, `getPlanContext`, route scoring,
-      `sampleWaypoints` — the git log shows repeated regressions here.
+      `buildAnthropicMessages` (incl. elision), `getPlanContext`, route
+      scoring, `sampleWaypoints` — the git log shows repeated regressions
+      here. These helpers are now exported from `lib/agent.ts`.
 - [ ] **One-time migration of legacy `raw_content` rows** to the
       `MessageParam[]` format, then delete the format-sniffing in
       `buildAnthropicMessages()`.
@@ -74,16 +74,12 @@ delete confirmation, Plan week math unified on `getPlanContext()`.
 - [ ] **Zod schemas for Garmin tool responses** in `/api/dashboard` instead
       of the `pickNumber`/`searchKey` key-hunting (already bitten twice).
 - [ ] **Signed session cookie** — store an HMAC-signed expiring token
-      instead of the raw passphrase; constant-time compare in `/api/auth`.
-- [ ] **MCP client recovery** — evict the cached `Client` from the map in
-      `lib/mcp-client.ts` when the Python subprocess dies (transport
-      close/error handler) so the next call reconnects.
+      instead of the raw passphrase; constant-time compare in `/api/auth`
+      (use `crypto.timingSafeEqual`).
 - [ ] **Move the athlete profile to the DB/config** — zones, goal, SI
       protocol are hardcoded in `lib/coach-prompt.ts` and *duplicated* in
       `app/api/insight/route.ts`; a pace tweak shouldn't be a deploy.
-- [ ] **Extract the agent loop** from `app/api/chat/route.ts` into
-      `lib/agent.ts`; make synthetic tools a registry (`{schema, execute}`).
-- [ ] **Centralize the model ID** (`claude-sonnet-4-6` is hardcoded in two
-      files).
+- [ ] **Centralize the model ID** — `lib/agent.ts` exports `COACH_MODEL`;
+      point `app/api/insight/route.ts` at it (or an env var).
 - [ ] **Don't stream raw error internals to the client** in the chat SSE
       `error` event.
