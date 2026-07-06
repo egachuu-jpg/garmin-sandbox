@@ -1,8 +1,10 @@
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 
-// Singleton map — persists across requests within the same Node.js process
-const clients = new Map<string, Client>();
+// Singleton map — persists across requests within the same Node.js process.
+// Caches the connection *promise* (not the client) so concurrent cold-start
+// requests share one subprocess spawn instead of racing to create several.
+const clients = new Map<string, Promise<Client | null>>();
 
 const MCP_SERVERS = [
   {
@@ -17,9 +19,7 @@ const MCP_SERVERS = [
   },
 ] as const;
 
-async function getClient(server: (typeof MCP_SERVERS)[number]): Promise<Client | null> {
-  if (clients.has(server.id)) return clients.get(server.id)!;
-
+async function connect(server: (typeof MCP_SERVERS)[number]): Promise<Client | null> {
   try {
     const env: Record<string, string> = {
       ...Object.fromEntries(
@@ -41,13 +41,39 @@ async function getClient(server: (typeof MCP_SERVERS)[number]): Promise<Client |
     );
 
     await client.connect(transport);
-    clients.set(server.id, client);
+
+    // If the Python subprocess dies (crash, OOM, the curl_cffi/libstdc++
+    // failure mode), evict the cached connection so the next call reconnects
+    // instead of every Garmin tool failing until a full restart.
+    client.onclose = () => {
+      console.warn(`[MCP] Connection closed: ${server.id} — evicting; next call reconnects.`);
+      clients.delete(server.id);
+    };
+    client.onerror = err => {
+      console.error(`[MCP] Connection error on ${server.id}:`, err);
+    };
+
     console.log(`[MCP] Connected: ${server.id}`);
     return client;
   } catch (err) {
     console.error(`[MCP] Failed to connect to ${server.id}:`, err);
     return null;
   }
+}
+
+async function getClient(server: (typeof MCP_SERVERS)[number]): Promise<Client | null> {
+  const cached = clients.get(server.id);
+  if (cached) return cached;
+
+  const pending = connect(server);
+  clients.set(server.id, pending);
+
+  const client = await pending;
+  // Don't cache a failed connect — let the next request retry.
+  if (client === null && clients.get(server.id) === pending) {
+    clients.delete(server.id);
+  }
+  return client;
 }
 
 export type AnthropicTool = {

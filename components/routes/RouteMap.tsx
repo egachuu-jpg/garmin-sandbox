@@ -23,6 +23,8 @@ type Props = {
   center: MapPoint;
   /** Change this value to fit the viewport to the current lines/waypoints. */
   fitKey: string;
+  /** Extra bottom padding (px) for fitBounds — the area covered by the bottom sheet. */
+  fitBottomInset?: number;
   onMapClick?: (p: MapPoint) => void;
   onWaypointMove?: (index: number, p: MapPoint) => void;
   onWaypointTap?: (index: number) => void;
@@ -57,6 +59,7 @@ export function RouteMap({
   pendingPin,
   center,
   fitKey,
+  fitBottomInset = 0,
   onMapClick,
   onWaypointMove,
   onWaypointTap,
@@ -72,6 +75,10 @@ export function RouteMap({
   // Latest callbacks without re-binding map handlers.
   const cbRef = useRef({ onMapClick, onWaypointMove, onWaypointTap });
   cbRef.current = { onMapClick, onWaypointMove, onWaypointTap };
+
+  // Read at fit time (not a dependency) so sheet moves don't trigger refits.
+  const bottomInsetRef = useRef(fitBottomInset);
+  bottomInsetRef.current = fitBottomInset;
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
@@ -173,15 +180,20 @@ export function RouteMap({
       ...lines.flatMap(l => l.coordinates.map(c => [c[0], c[1]] as [number, number])),
       ...waypoints.map(w => [w.lng, w.lat] as [number, number]),
     ];
+    // Keep content inside the map area not covered by the bottom sheet.
+    // Clamp so total padding can never exceed the viewport (MapLibre throws).
+    const h = map.getContainer().clientHeight || 0;
+    const bottom = Math.min(48 + bottomInsetRef.current, Math.max(48, h - 160));
+
     if (pts.length === 0) {
-      map.easeTo({ center: [center.lng, center.lat], zoom: 12 });
+      map.easeTo({ center: [center.lng, center.lat], zoom: 12, padding: { top: 0, left: 0, right: 0, bottom: Math.max(0, bottom - 48) } });
       return;
     }
     const bounds = pts.reduce(
       (b, p) => b.extend(p),
       new maplibregl.LngLatBounds(pts[0], pts[0])
     );
-    map.fitBounds(bounds, { padding: 48, maxZoom: 15, duration: 500 });
+    map.fitBounds(bounds, { padding: { top: 48, left: 48, right: 48, bottom }, maxZoom: 15, duration: 500 });
     // Only refit when fitKey changes — not on every waypoint tap.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fitKey, ready]);

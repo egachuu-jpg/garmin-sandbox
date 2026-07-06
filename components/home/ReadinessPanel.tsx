@@ -28,10 +28,38 @@ function readinessLabel(score: number | null): string {
   return 'Poor — recover';
 }
 
+// Color scales match Garmin's banding so a 23 and a 95 read differently at a
+// glance. HRV is deliberately uncolored — it's meaningful only relative to
+// the athlete's own baseline, so an absolute color scale would mislead.
+function readinessColor(score: number | null): string {
+  if (score === null) return 'text-white';
+  if (score >= 75) return 'text-emerald-400';
+  if (score >= 50) return 'text-yellow-400';
+  if (score >= 25) return 'text-amber-500';
+  return 'text-red-400';
+}
+
+function sleepColor(score: number | null | undefined): string {
+  if (score === null || score === undefined) return '';
+  if (score >= 80) return 'text-emerald-400';
+  if (score >= 60) return 'text-yellow-400';
+  return 'text-red-400';
+}
+
+function batteryColor(level: number | null | undefined): string {
+  if (level === null || level === undefined) return '';
+  if (level >= 75) return 'text-emerald-400';
+  if (level >= 50) return 'text-yellow-400';
+  if (level >= 25) return 'text-amber-500';
+  return 'text-red-400';
+}
+
 export function ReadinessPanel() {
   const [data, setData] = useState<Dashboard | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
+  // Set when the service worker served its offline snapshot (x-sw-fetched-at).
+  const [staleAsOf, setStaleAsOf] = useState<string | null>(null);
 
   // Tapping a tile tells the story of that data point inline — no chat
   // navigation. Only one metric is expanded at a time; insights are cached
@@ -49,6 +77,7 @@ export function ReadinessPanel() {
     try {
       const res = await fetch('/api/dashboard');
       if (!res.ok) throw new Error('bad status');
+      setStaleAsOf(res.headers.get('x-sw-fetched-at'));
       setData(await res.json());
     } catch {
       setError(true);
@@ -100,14 +129,29 @@ export function ReadinessPanel() {
   const score = data?.readiness ?? null;
   const fmt = (v: number | null | undefined) => (v === null || v === undefined ? '—' : String(Math.round(v)));
 
-  const stats: Array<{ key: MetricKey; icon: typeof Brain; label: string; unit: string; value: number | null | undefined }> = [
-    { key: 'hrv', icon: Brain, label: 'HRV', unit: 'ms', value: data?.hrv },
-    { key: 'sleep', icon: Moon, label: 'Sleep', unit: 'score', value: data?.sleepScore },
-    { key: 'battery', icon: Battery, label: 'Battery', unit: '%', value: data?.bodyBattery },
+  const stats: Array<{ key: MetricKey; icon: typeof Brain; label: string; unit: string; value: number | null | undefined; color: string }> = [
+    { key: 'hrv', icon: Brain, label: 'HRV', unit: 'ms', value: data?.hrv, color: '' },
+    { key: 'sleep', icon: Moon, label: 'Sleep', unit: 'score', value: data?.sleepScore, color: sleepColor(data?.sleepScore) },
+    { key: 'battery', icon: Battery, label: 'Battery', unit: '%', value: data?.bodyBattery, color: batteryColor(data?.bodyBattery) },
   ];
 
   return (
     <>
+      {/* Offline snapshot notice */}
+      {staleAsOf && (
+        <div className="bg-amber-950/50 border border-amber-800/50 rounded-xl px-3 py-2 text-xs text-amber-400">
+          Offline — showing data from{' '}
+          {new Date(staleAsOf).toLocaleString('en-US', {
+            timeZone: 'America/Chicago',
+            month: 'short',
+            day: 'numeric',
+            hour: 'numeric',
+            minute: '2-digit',
+          })}
+          . Tap refresh when you&apos;re back online.
+        </div>
+      )}
+
       {/* Readiness card */}
       <div className="bg-surface-card border border-surface-border rounded-2xl p-5">
         <div className="flex items-center justify-between mb-1">
@@ -139,7 +183,7 @@ export function ReadinessPanel() {
             onClick={() => toggleMetric('readiness')}
             className="flex items-end gap-3 mt-3 w-full text-left active:opacity-70 transition-opacity"
           >
-            <div className="text-5xl font-bold">{fmt(score)}</div>
+            <div className={`text-5xl font-bold ${readinessColor(score)}`}>{fmt(score)}</div>
             <p className="text-sm text-muted pb-1 flex-1">{readinessLabel(score)}</p>
             <ChevronDown
               size={16}
@@ -151,7 +195,7 @@ export function ReadinessPanel() {
 
       {/* Stat chips */}
       <div className="grid grid-cols-3 gap-3">
-        {stats.map(({ key, icon: Icon, label, unit, value }) => (
+        {stats.map(({ key, icon: Icon, label, unit, value, color }) => (
           <button
             key={key}
             onClick={() => toggleMetric(key)}
@@ -162,7 +206,7 @@ export function ReadinessPanel() {
           >
             <Icon size={16} className="text-muted mx-auto mb-1.5" />
             <p className="text-xs text-muted">{label}</p>
-            <p className="text-xl font-semibold mt-0.5">
+            <p className={`text-xl font-semibold mt-0.5 ${color}`}>
               {loading && !data ? (
                 <span className="inline-block h-5 w-8 rounded bg-surface-border animate-pulse align-middle" />
               ) : (

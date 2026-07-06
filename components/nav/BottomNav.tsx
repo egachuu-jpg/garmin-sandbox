@@ -2,16 +2,14 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Home, MessageCircle, BarChart2, Dumbbell, Map, Calendar } from 'lucide-react';
+import { Home, MessageCircle, Dumbbell, Map } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 const tabs = [
   { href: '/', icon: Home, label: 'Home' },
-  { href: '/chat', icon: MessageCircle, label: 'Chat' },
-  { href: '/reports', icon: BarChart2, label: 'Reports' },
-  { href: '/workouts', icon: Dumbbell, label: 'Workouts' },
+  { href: '/chat', icon: MessageCircle, label: 'Coach' },
+  { href: '/training', icon: Dumbbell, label: 'Training' },
   { href: '/routes', icon: Map, label: 'Routes' },
-  { href: '/plan', icon: Calendar, label: 'Plan' },
 ];
 
 export function BottomNav() {

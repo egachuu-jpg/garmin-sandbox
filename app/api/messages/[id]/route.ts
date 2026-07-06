@@ -11,9 +11,10 @@ export async function GET(
     role: string;
     text: string;
     tool_calls: unknown;
+    completed: boolean;
     created_at: string;
   }>(
-    `SELECT id, role, text, tool_calls, created_at
+    `SELECT id, role, text, tool_calls, completed, created_at
      FROM messages
      WHERE conversation_id = $1
      ORDER BY created_at ASC`,

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Wind, MapPin, Locate, Trash2, Undo2, RotateCcw, Pencil, Save, Sparkles, X } from 'lucide-react';
 import { RouteMap, type MapLine, type MapPoint } from './RouteMap';
+import { BottomSheet, type SheetSnap } from './BottomSheet';
 
 const MI = 1609.34;
 const CAND_COLORS = ['#10b981', '#3b82f6', '#f59e0b'];
@@ -120,6 +121,22 @@ function WindCard({ wind, windy, date }: { wind: WindInfo | null; windy: boolean
 export default function RouteBuilder() {
   const [mode, setMode] = useState<'suggest' | 'draw' | 'saved'>('suggest');
 
+  // Full-height map with the controls in a draggable bottom sheet. The sheet
+  // drops to 'peek' whenever the user needs the map (drawing, dropping pins)
+  // and rises to 'half' when there's something to read or type.
+  const [snap, setSnap] = useState<SheetSnap>('half');
+  const areaRef = useRef<HTMLDivElement>(null);
+  const [areaH, setAreaH] = useState(0);
+  useEffect(() => {
+    const el = areaRef.current;
+    if (!el) return;
+    const measure = () => setAreaH(el.clientHeight);
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
   // Start point
   const [places, setPlaces] = useState<SavedPlace[]>([]);
   const [startPlaceId, setStartPlaceId] = useState<string | null>(null);
@@ -140,6 +157,9 @@ export default function RouteBuilder() {
   const [genError, setGenError] = useState('');
   const [result, setResult] = useState<SuggestResponse | null>(null);
   const [selCand, setSelCand] = useState(0);
+  // After generating, collapse the request form to a one-line summary so the
+  // map + candidates fit on screen without scrolling past all the controls.
+  const [formCollapsed, setFormCollapsed] = useState(false);
 
   // Draw / edit
   const [waypoints, setWaypoints] = useState<MapPoint[]>([]);
@@ -151,6 +171,8 @@ export default function RouteBuilder() {
   // Saved
   const [savedRoutes, setSavedRoutes] = useState<SavedRoute[]>([]);
   const [selSavedId, setSelSavedId] = useState<string | null>(null);
+  // Two-step delete: first tap arms, second tap deletes.
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
   // Save-name dialog: startSave() stashes the route body and opens the sheet;
   // confirmSave() posts it under whatever name the user settled on.
@@ -230,9 +252,11 @@ export default function RouteBuilder() {
     (p: MapPoint) => {
       if (addingPlace) {
         setPendingPin(p);
+        setSnap('half'); // bring the name field back up
       } else if (pickingStart) {
         setCustomStart(p);
         setPickingStart(false);
+        setSnap('half');
       } else if (mode === 'draw') {
         setWaypoints(w => [...w, p]);
       }
@@ -271,6 +295,8 @@ export default function RouteBuilder() {
       if (json.error) throw new Error(json.error);
       setResult(json);
       setSelCand(0);
+      setFormCollapsed(true);
+      setSnap('half'); // map + candidate list both visible
       bumpFit();
     } catch (err) {
       setGenError(String(err instanceof Error ? err.message : err));
@@ -284,6 +310,7 @@ export default function RouteBuilder() {
     setWaypoints(c.waypoints);
     setSnapped({ geojson: c.geojson as SavedRoute['geojson'], distanceMeters: c.distanceMeters, ascentMeters: c.ascentMeters });
     setMode('draw');
+    setSnap('peek'); // editing happens on the map
     bumpFit();
   };
 
@@ -344,24 +371,13 @@ export default function RouteBuilder() {
 
   const selSaved = savedRoutes.find(r => r.id === selSavedId);
 
-  return (
-    <div className="flex flex-col gap-3">
-      <div className="h-[42vh] min-h-[280px]">
-        <RouteMap
-          lines={lines}
-          waypoints={mode === 'draw' ? waypoints : []}
-          startPin={startPoint}
-          pendingPin={pendingPin}
-          center={center}
-          fitKey={`${mode}-${fitKey}-${selCand}-${selSavedId ?? ''}`}
-          onMapClick={handleMapClick}
-          onWaypointMove={(i, p) => setWaypoints(w => w.map((x, j) => (j === i ? p : x)))}
-          onWaypointTap={i => setWaypoints(w => w.filter((_, j) => j !== i))}
-        />
-      </div>
+  // Bottom padding for map fitBounds — the area the sheet covers. 'full' uses
+  // the half value: fits are for reading the map, which you do at half or peek.
+  const sheetInset = snap === 'peek' ? 150 : Math.round(Math.max(areaH, 240) * 0.52);
 
-      {/* Mode switch */}
-      <div className="flex bg-surface-card rounded-xl p-1 border border-surface-border">
+  const sheetHeader = (
+    <div className="space-y-2">
+      <div className="flex bg-surface rounded-xl p-1 border border-surface-border">
         {([
           ['suggest', 'Suggest'],
           ['draw', 'Draw'],
@@ -372,6 +388,8 @@ export default function RouteBuilder() {
             onClick={() => {
               setMode(m);
               if (m !== 'suggest') setPickingStart(false);
+              // Drawing happens on the map — get the sheet out of the way.
+              setSnap(m === 'draw' ? 'peek' : 'half');
             }}
             className={`flex-1 py-2 text-sm font-medium rounded-lg transition-colors ${
               mode === m ? 'bg-primary text-white' : 'text-muted'
@@ -381,9 +399,48 @@ export default function RouteBuilder() {
           </button>
         ))}
       </div>
+      {mode === 'draw' && (
+        <div className="flex items-center gap-2 text-sm px-1">
+          <span className="font-medium">{snapped ? miles(snapped.distanceMeters) : '0.0 mi'}</span>
+          {snapped && <span className="text-xs text-muted">{feet(snapped.ascentMeters)} climb</span>}
+          {snapping && <span className="text-xs text-muted animate-pulse">snapping…</span>}
+          <div className="flex-1" />
+          <button
+            onClick={() => setWaypoints(w => w.slice(0, -1))}
+            disabled={waypoints.length === 0}
+            aria-label="Undo last point"
+            className="p-2 -my-2 rounded-lg text-muted disabled:opacity-40 active:text-primary"
+          >
+            <Undo2 size={16} />
+          </button>
+        </div>
+      )}
+      {(pickingStart || (addingPlace && !pendingPin)) && (
+        <p className="text-xs text-amber-400 px-1">Tap the map to drop the pin.</p>
+      )}
+    </div>
+  );
 
-      {/* Start point + places (shared by suggest & draw) */}
-      {mode !== 'saved' && (
+  return (
+    <div ref={areaRef} className="relative h-full min-h-[320px]">
+      <RouteMap
+        lines={lines}
+        waypoints={mode === 'draw' ? waypoints : []}
+        startPin={startPoint}
+        pendingPin={pendingPin}
+        center={center}
+        fitKey={`${mode}-${fitKey}-${selCand}-${selSavedId ?? ''}`}
+        fitBottomInset={sheetInset}
+        onMapClick={handleMapClick}
+        onWaypointMove={(i, p) => setWaypoints(w => w.map((x, j) => (j === i ? p : x)))}
+        onWaypointTap={i => setWaypoints(w => w.filter((_, j) => j !== i))}
+      />
+
+      <BottomSheet containerHeight={areaH} snap={snap} onSnapChange={setSnap} header={sheetHeader}>
+
+      {/* Start point + places (shared by suggest & draw; hidden while the
+          suggest form is collapsed — the summary row carries the start name) */}
+      {mode !== 'saved' && !(mode === 'suggest' && formCollapsed && result) && (
         <div className="bg-surface-card border border-surface-border rounded-2xl p-3 space-y-2">
           <p className="text-xs text-muted font-medium flex items-center gap-1.5">
             <MapPin size={13} /> Start point
@@ -403,7 +460,13 @@ export default function RouteBuilder() {
                 {p.is_default ? ' ★' : ''}
               </Chip>
             ))}
-            <Chip active={!!customStart || pickingStart} onClick={() => setPickingStart(true)}>
+            <Chip
+              active={!!customStart || pickingStart}
+              onClick={() => {
+                setPickingStart(true);
+                setSnap('peek'); // free up the map to tap
+              }}
+            >
               {customStart ? 'Pinned start' : pickingStart ? 'Tap map…' : 'Drop pin'}
             </Chip>
             <Chip active={addingPlace} onClick={() => setAddingPlace(a => !a)}>
@@ -440,7 +503,22 @@ export default function RouteBuilder() {
       )}
 
       {/* SUGGEST MODE */}
-      {mode === 'suggest' && (
+      {mode === 'suggest' && formCollapsed && result && (
+        <button
+          onClick={() => setFormCollapsed(false)}
+          className="flex items-center justify-between gap-3 bg-surface-card border border-surface-border rounded-2xl px-4 py-3 text-left"
+        >
+          <p className="text-sm min-w-0 truncate">
+            {sport === 'running' ? 'Run' : 'Ride'} · {distanceMi} mi · {fmtWorkoutDate(date)}
+            <span className="text-muted"> · from {customStart ? 'pinned start' : startPlace?.name ?? 'start'}</span>
+          </p>
+          <span className="flex items-center gap-1 text-xs text-primary font-medium flex-shrink-0">
+            <Pencil size={13} /> Edit
+          </span>
+        </button>
+      )}
+
+      {mode === 'suggest' && !(formCollapsed && result) && (
         <>
           <div className="bg-surface-card border border-surface-border rounded-2xl p-3 space-y-3">
             <p className="text-xs text-muted font-medium">Workout</p>
@@ -510,7 +588,11 @@ export default function RouteBuilder() {
             </button>
             {genError && <p className="text-xs text-red-400">{genError}</p>}
           </div>
+        </>
+      )}
 
+      {mode === 'suggest' && (
+        <>
           {result && <WindCard wind={result.wind} windy={result.windy} date={date} />}
 
           {result?.candidates.map((c, i) => (
@@ -580,11 +662,7 @@ export default function RouteBuilder() {
             Tap the map to add points — the route snaps to {sport === 'running' ? 'runnable paths' : 'ridable roads'}. Drag a
             point to move it, tap it to remove it.
           </p>
-          <div className="flex items-center gap-2 text-sm">
-            <span className="font-medium">{snapped ? miles(snapped.distanceMeters) : '0.0 mi'}</span>
-            {snapped && <span className="text-xs text-muted">{feet(snapped.ascentMeters)} climb</span>}
-            {snapping && <span className="text-xs text-muted animate-pulse">snapping…</span>}
-            <div className="flex-1" />
+          <div className="flex gap-2">
             {(['running', 'cycling'] as const).map(s => (
               <Chip key={s} active={sport === s} onClick={() => setSport(s)}>
                 {s === 'running' ? 'Run' : 'Ride'}
@@ -650,6 +728,7 @@ export default function RouteBuilder() {
               key={r.id}
               onClick={() => {
                 setSelSavedId(r.id);
+                setConfirmDeleteId(null);
                 bumpFit();
               }}
               className={`text-left bg-surface-card border rounded-2xl p-3 ${
@@ -679,6 +758,7 @@ export default function RouteBuilder() {
                         setSnapped({ geojson: r.geojson, distanceMeters: r.distance_meters, ascentMeters: r.ascent_meters ?? 0 });
                         setSport(r.sport);
                         setMode('draw');
+                        setSnap('peek');
                         bumpFit();
                       }}
                       className="flex items-center gap-1 text-xs text-primary font-medium"
@@ -690,19 +770,28 @@ export default function RouteBuilder() {
                     role="button"
                     onClick={async e => {
                       e.stopPropagation();
+                      if (confirmDeleteId !== r.id) {
+                        setConfirmDeleteId(r.id);
+                        return;
+                      }
                       await fetch(`/api/routes/${r.id}`, { method: 'DELETE' });
+                      setConfirmDeleteId(null);
                       setSelSavedId(null);
                       loadSaved();
                     }}
-                    className="flex items-center gap-1 text-xs text-red-400 font-medium"
+                    className={`flex items-center gap-1 text-xs font-medium ${
+                      confirmDeleteId === r.id ? 'text-red-400 bg-red-950/60 border border-red-800/50 rounded-lg px-2 py-1' : 'text-red-400'
+                    }`}
                   >
-                    <Trash2 size={13} /> Delete
+                    <Trash2 size={13} /> {confirmDeleteId === r.id ? 'Tap again to delete' : 'Delete'}
                   </span>
                 </div>
               )}
             </button>
           ))
         ))}
+
+      </BottomSheet>
 
       {/* Save-name dialog */}
       {saveName !== null && (

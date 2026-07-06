@@ -19,5 +19,8 @@ export function middleware(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/((?!_next/static|_next/image|favicon.ico|manifest.json|icon).*)'],
+  // sw.js must stay reachable without a session: the browser refetches it on
+  // its own schedule to check for updates, and a login redirect there would
+  // silently break the service worker update cycle after cookie expiry.
+  matcher: ['/((?!_next/static|_next/image|favicon.ico|manifest.json|icon|sw.js).*)'],
 };

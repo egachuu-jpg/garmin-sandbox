@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { Send, Loader2 } from 'lucide-react';
+import { Send, Square } from 'lucide-react';
 import { MessageBubble, type Message, type ToolCall } from './MessageBubble';
 
 const PENDING_ID = '__pending_reply__';
@@ -11,7 +11,19 @@ type InitialMessage = {
   role: string;
   text: string;
   tool_calls: ToolCall[] | null;
+  completed?: boolean;
 };
+
+// DB rows store tool_calls as {id, name, result} — derive the UI status the
+// live stream would have shown (otherwise reloaded chips render as failed).
+function normalizeToolCalls(raw: unknown): ToolCall[] | undefined {
+  if (!Array.isArray(raw) || raw.length === 0) return undefined;
+  return (raw as Array<{ id: string; name: string; status?: ToolCall['status']; result?: string }>).map(tc => ({
+    id: tc.id,
+    name: tc.name,
+    status: tc.status ?? (typeof tc.result === 'string' && tc.result.startsWith('Error') ? 'error' : 'done'),
+  }));
+}
 
 type Props = {
   conversationId: string;
@@ -26,59 +38,102 @@ const SUGGESTED_PROMPTS = [
   "How is my gear holding up?",
 ];
 
+// The old Reports tab as one-tap prompts — same canned analyses, launched in
+// place instead of teleporting into a separate conversation.
+const REPORT_PROMPTS = [
+  {
+    emoji: '📊',
+    title: 'Weekly Summary',
+    prompt:
+      'Generate a weekly training summary. Include total mileage, average pace, training load, sleep quality, and HRV trends for this week.',
+  },
+  {
+    emoji: '🏁',
+    title: 'Race Readiness',
+    prompt:
+      'Assess my current race readiness for the Mankato Marathon sub-4 goal. Check VO2max, recent long runs, training load, and project my likely finish time.',
+  },
+  {
+    emoji: '💚',
+    title: 'Recovery Patterns',
+    prompt:
+      'Analyze my recovery patterns over the past 30 days. Look at body battery trends, stress levels, HRV, and sleep quality. Identify any concerning patterns.',
+  },
+  {
+    emoji: '👟',
+    title: 'Gear Mileage',
+    prompt:
+      'Review my gear mileage. Check all tracked shoes and equipment, flag anything approaching replacement thresholds, and advise on rotation strategy given my SI joint condition.',
+  },
+];
+
 export function ChatInterface({ conversationId, initialMessages = [], seedPrompt }: Props) {
-  // If we mounted with the last message being a user message it means the user
-  // navigated away while the coach was still responding. The server will finish
-  // the agentic loop and save the reply to the DB regardless — we just need to
-  // poll until it appears.
+  // The reply is still being produced server-side if the last row is the
+  // user's message (assistant row not inserted yet) or an assistant row that
+  // was persisted mid-turn (completed = false). Either way the server finishes
+  // the agentic loop and saves round by round — we just poll until it's done.
+  const lastInitial = initialMessages[initialMessages.length - 1];
   const pendingOnMount =
-    initialMessages.length > 0 &&
-    initialMessages[initialMessages.length - 1].role === 'user';
+    !!lastInitial && (lastInitial.role === 'user' || lastInitial.completed === false);
 
   const [messages, setMessages] = useState<Message[]>(() => {
     const base: Message[] = initialMessages.map(m => ({
       id: m.id,
       role: m.role as 'user' | 'assistant',
       text: m.text,
-      toolCalls: m.tool_calls ?? undefined,
+      toolCalls: normalizeToolCalls(m.tool_calls),
+      // A mid-turn assistant row shows its partial text with the streaming cursor.
+      streaming: m.completed === false,
     }));
-    if (pendingOnMount) {
+    if (pendingOnMount && lastInitial?.role === 'user') {
       base.push({ id: PENDING_ID, role: 'assistant', text: '', toolCalls: [], streaming: true });
     }
     return base;
   });
   const [input, setInput] = useState('');
   const [streaming, setStreaming] = useState(pendingOnMount);
+  const scrollRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const seededRef = useRef(false);
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
+  // Only autoscroll while the user is pinned to the bottom — scrolling up to
+  // reread mid-stream must not get yanked back down by each token batch.
+  const pinnedRef = useRef(true);
+
+  const handleScroll = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    pinnedRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+  }, []);
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (pinnedRef.current) bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  // Poll for a reply that was saved to the DB after the user navigated away
-  useEffect(() => {
-    if (!pendingOnMount) return;
-
-    let active = true;
+  // Poll until the server-saved reply appears in the DB. Used when the user
+  // mounted mid-turn (navigated away and back) and after Stop — in both cases
+  // the server finishes the agentic loop and persists the reply regardless.
+  const startPolling = useCallback(() => {
+    if (pollingRef.current) clearInterval(pollingRef.current);
 
     const poll = async () => {
-      if (!active) return;
       try {
         const res = await fetch(`/api/messages/${conversationId}`);
-        if (!res.ok || !active) return;
-        const rows: Array<{ id: string; role: string; text: string; tool_calls: unknown }> =
+        if (!res.ok) return;
+        const rows: Array<{ id: string; role: string; text: string; tool_calls: unknown; completed?: boolean }> =
           await res.json();
-        if (rows[rows.length - 1]?.role === 'assistant') {
-          active = false;
+        const last = rows[rows.length - 1];
+        if (last?.role === 'assistant' && last.completed !== false) {
+          if (pollingRef.current) clearInterval(pollingRef.current);
+          pollingRef.current = null;
           setMessages(
             rows.map(m => ({
               id: m.id,
               role: m.role as 'user' | 'assistant',
               text: m.text,
-              toolCalls: (m.tool_calls as ToolCall[] | null) ?? undefined,
+              toolCalls: normalizeToolCalls(m.tool_calls),
             }))
           );
           setStreaming(false);
@@ -89,11 +144,21 @@ export function ChatInterface({ conversationId, initialMessages = [], seedPrompt
     };
 
     pollingRef.current = setInterval(poll, 2000);
+  }, [conversationId]);
+
+  useEffect(() => {
+    if (pendingOnMount) startPolling();
     return () => {
-      active = false;
       if (pollingRef.current) clearInterval(pollingRef.current);
     };
-  }, [conversationId]); // pendingOnMount is stable (derived from stable initialMessages prop)
+    // pendingOnMount is stable (derived from stable initialMessages prop)
+  }, [pendingOnMount, startPolling]);
+
+  // Stop reading the stream. The server finishes the turn and saves it either
+  // way, so reconcile via polling — the bubble fills in with the final reply.
+  const stopStreaming = useCallback(() => {
+    abortRef.current?.abort();
+  }, []);
 
   const sendMessage = useCallback(
     async (text: string) => {
@@ -117,12 +182,17 @@ export function ChatInterface({ conversationId, initialMessages = [], seedPrompt
       setInput('');
       if (textareaRef.current) textareaRef.current.style.height = 'auto';
       setStreaming(true);
+      pinnedRef.current = true;
+
+      const controller = new AbortController();
+      abortRef.current = controller;
 
       try {
         const res = await fetch('/api/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ text: trimmed, conversationId }),
+          signal: controller.signal,
         });
 
         if (!res.body) throw new Error('No response body');
@@ -211,18 +281,28 @@ export function ChatInterface({ conversationId, initialMessages = [], seedPrompt
           }
         }
       } catch (err) {
-        setMessages(prev =>
-          prev.map(m =>
-            m.id === assistantMsgId
-              ? { ...m, text: `Connection error: ${String(err)}`, streaming: false }
-              : m
-          )
-        );
+        if (controller.signal.aborted) {
+          // User hit Stop. Keep whatever streamed in; the server finishes and
+          // saves the full reply, so poll until it lands and swap it in.
+          setMessages(prev =>
+            prev.map(m => (m.id === assistantMsgId ? { ...m, streaming: false } : m))
+          );
+          startPolling();
+        } else {
+          setMessages(prev =>
+            prev.map(m =>
+              m.id === assistantMsgId
+                ? { ...m, text: `Connection error: ${String(err)}`, streaming: false }
+                : m
+            )
+          );
+        }
       } finally {
+        abortRef.current = null;
         setStreaming(false);
       }
     },
-    [conversationId, streaming]
+    [conversationId, streaming, startPolling]
   );
 
   // Auto-send seed prompt from Reports page
@@ -237,7 +317,7 @@ export function ChatInterface({ conversationId, initialMessages = [], seedPrompt
 
   return (
     <div className="flex flex-col h-full">
-      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
+      <div ref={scrollRef} onScroll={handleScroll} className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
         {isEmpty && (
           <div className="pt-8">
             <p className="text-center text-muted text-sm mb-6">What's on your mind?</p>
@@ -249,6 +329,20 @@ export function ChatInterface({ conversationId, initialMessages = [], seedPrompt
                   className="w-full text-left px-4 py-3 rounded-xl bg-surface-card border border-surface-border text-sm text-gray-300 active:bg-surface-border transition-colors"
                 >
                   {prompt}
+                </button>
+              ))}
+            </div>
+
+            <p className="text-center text-muted text-xs uppercase tracking-wide mt-8 mb-3">Reports</p>
+            <div className="grid grid-cols-2 gap-2">
+              {REPORT_PROMPTS.map(r => (
+                <button
+                  key={r.title}
+                  onClick={() => sendMessage(r.prompt)}
+                  className="flex items-center gap-2 px-3 py-3 rounded-xl bg-surface-card border border-surface-border text-sm text-gray-300 active:bg-surface-border transition-colors"
+                >
+                  <span>{r.emoji}</span>
+                  <span className="text-left leading-tight">{r.title}</span>
                 </button>
               ))}
             </div>
@@ -280,21 +374,26 @@ export function ChatInterface({ conversationId, initialMessages = [], seedPrompt
             }}
             placeholder="Ask your coach…"
             rows={1}
-            disabled={streaming}
-            className="flex-1 bg-surface-card border border-surface-border rounded-2xl px-4 py-3 text-sm resize-none focus:outline-none focus:border-primary disabled:opacity-50 leading-snug transition-colors"
+            className="flex-1 bg-surface-card border border-surface-border rounded-2xl px-4 py-3 text-sm resize-none focus:outline-none focus:border-primary leading-snug transition-colors"
           />
-          <button
-            onClick={() => sendMessage(input)}
-            disabled={!input.trim() || streaming}
-            className="w-11 h-11 rounded-full bg-primary flex items-center justify-center disabled:opacity-40 active:scale-90 transition-transform flex-shrink-0"
-            aria-label="Send"
-          >
-            {streaming ? (
-              <Loader2 size={18} className="animate-spin" />
-            ) : (
+          {streaming ? (
+            <button
+              onClick={stopStreaming}
+              className="w-11 h-11 rounded-full bg-surface-card border border-surface-border flex items-center justify-center active:scale-90 transition-transform flex-shrink-0"
+              aria-label="Stop"
+            >
+              <Square size={14} className="text-red-400 fill-red-400" />
+            </button>
+          ) : (
+            <button
+              onClick={() => sendMessage(input)}
+              disabled={!input.trim()}
+              className="w-11 h-11 rounded-full bg-primary flex items-center justify-center disabled:opacity-40 active:scale-90 transition-transform flex-shrink-0"
+              aria-label="Send"
+            >
               <Send size={18} />
-            )}
-          </button>
+            </button>
+          )}
         </div>
       </div>
     </div>
