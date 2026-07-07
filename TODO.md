@@ -80,7 +80,7 @@ turns that crashed between persisting a round and its tool results.
 - [ ] **Move the athlete profile to the DB/config** — zones, goal, SI
       protocol are hardcoded in `lib/coach-prompt.ts` and *duplicated* in
       `app/api/insight/route.ts`; a pace tweak shouldn't be a deploy.
-- [ ] **Centralize the model ID** — `lib/agent.ts` exports `COACH_MODEL`;
-      point `app/api/insight/route.ts` at it (or an env var).
+- [x] **Centralize the model ID** — `app/api/insight/route.ts` now imports
+      `COACH_MODEL` from `lib/agent.ts` instead of hardcoding the model string.
 - [ ] **Don't stream raw error internals to the client** in the chat SSE
       `error` event.
