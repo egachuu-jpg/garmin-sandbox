@@ -74,11 +74,16 @@ export async function GET() {
 
   const today = getPlanContext().startOfTodayUTC.toISOString().split('T')[0];
 
-  const TOOL_NAMES = ['get_training_readiness', 'get_hrv_data', 'get_sleep_data', 'get_stats', 'get_rhr_day'];
+  const TOOL_NAMES = ['get_training_readiness', 'get_hrv_data', 'get_sleep_summary', 'get_stats', 'get_rhr_day'];
   const [readiness, hrv, sleep, stats, rhr] = await Promise.allSettled([
     executeTool('taxuspt__get_training_readiness', { date: today }),
     executeTool('taxuspt__get_hrv_data', { date: today }),
-    executeTool('taxuspt__get_sleep_data', { date: today }),
+    // get_sleep_summary (not get_sleep_data): the full sleep payload is ~50KB of
+    // nested time-series just to reach one number; the summary tool curates the
+    // canonical dailySleepDTO.sleepScores.overall.value into a flat `sleep_score`
+    // (~350 bytes), so key-hunting can't miss it and debugNull logs the whole
+    // payload if it's ever still null.
+    executeTool('taxuspt__get_sleep_summary', { date: today }),
     // get_body_battery's own curation logic reads bodyBatteryActivityEvent /
     // bodyBatteryDynamicFeedbackEvent off the reports/daily payload — fields
     // that endpoint doesn't have — so it can never surface a level. get_stats
@@ -120,7 +125,9 @@ export async function GET() {
     readiness: debugNull('get_training_readiness', readiness, pickNumber(firstOf(val(readiness)), ['score'])),
     // garmin_mcp returns snake_case keys (last_night_avg_hrv_ms, weekly_avg_hrv_ms)
     hrv: debugNull('get_hrv_data', hrv, pickNumber(val(hrv), ['last_night_avg_hrv_ms', 'lastNightAvg', 'weekly_avg_hrv_ms', 'weeklyAvg', 'last_night_5min_high_hrv_ms', 'lastNight5MinHigh'])),
-    sleepScore: debugNull('get_sleep_data', sleep, pickNumber(val(sleep), ['overallScore', 'overall', 'sleepScore', 'value'])),
+    // get_sleep_summary curates the score as flat snake_case `sleep_score`; keep
+    // the raw-payload keys as fallbacks in case the summary shape ever drifts.
+    sleepScore: debugNull('get_sleep_summary', sleep, pickNumber(val(sleep), ['sleep_score', 'overall', 'sleepScore', 'value'])),
     // get_stats curates this as "body_battery_current" from Garmin's raw bodyBatteryMostRecentValue.
     bodyBattery: debugNull('get_stats', stats, pickNumber(val(stats), ['body_battery_current', 'bodyBatteryMostRecentValue'])),
     restingHr: debugNull('get_rhr_day', rhr, pickNumber(val(rhr), ['restingHeartRate', 'value'])),
