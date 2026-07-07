@@ -21,9 +21,12 @@ delete confirmation, Plan week math unified on `getPlanContext()`.
       view) — it currently always expands below all three chips.
 - [ ] **Chat: day dividers + timestamps** — messages need `created_at`
       exposed via the messages API and rendered as date separators.
-- [ ] **Sync `TOOL_LABELS` in `components/chat/MessageBubble.tsx` with the
-      real tool names** in `COACH_TOOLS` (most entries are stale —
-      `get_hrv` vs `get_hrv_data` etc. — so chips fall back to raw names).
+- [x] **Sync `TOOL_LABELS` in `components/chat/MessageBubble.tsx` with the
+      real tool names** in `COACH_TOOLS` — rebuilt the map so every key
+      matches a real base tool name (or a synthetic tool), fixing the stale
+      `get_hrv`/`get_stress`/`get_vo2max`/`get_resting_heart_rate` keys and
+      dropping non-existent ones (`get_last_activity`, `get_gear_stats`,
+      `schedule_week`).
 - [ ] **Friendlier chat errors** — raw error strings currently render inside
       the coach bubble; show a generic message + retry button, log details.
 - [ ] **Scheduled workouts: highlight today + group by week** — the list is
@@ -80,7 +83,7 @@ turns that crashed between persisting a round and its tool results.
 - [ ] **Move the athlete profile to the DB/config** — zones, goal, SI
       protocol are hardcoded in `lib/coach-prompt.ts` and *duplicated* in
       `app/api/insight/route.ts`; a pace tweak shouldn't be a deploy.
-- [ ] **Centralize the model ID** — `lib/agent.ts` exports `COACH_MODEL`;
-      point `app/api/insight/route.ts` at it (or an env var).
+- [x] **Centralize the model ID** — `app/api/insight/route.ts` now imports
+      `COACH_MODEL` from `lib/agent.ts` instead of hardcoding the model string.
 - [ ] **Don't stream raw error internals to the client** in the chat SSE
       `error` event.

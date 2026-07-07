@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
+import { COACH_MODEL } from '@/lib/agent';
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY, maxRetries: 2 });
 
@@ -46,7 +47,7 @@ The athlete just tapped on ${label}. In 2-3 short, concrete sentences, tell the 
 
   try {
     const msg = await anthropic.messages.create({
-      model: 'claude-sonnet-4-6',
+      model: COACH_MODEL,
       max_tokens: 220,
       messages: [{ role: 'user', content: prompt }],
     });
