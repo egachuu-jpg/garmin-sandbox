@@ -8,23 +8,24 @@ const PHASES = [
   { label: 'Taper & Race',      weeks: [15, 16, 17],            color: 'text-primary',    tag: 'Phase 4' },
 ];
 
+// Weekly totals from mankato-marathon-training-plan.md (July 2026 revision).
 const WEEK_HIGHLIGHTS: Record<number, string> = {
   1:  '13 mi · Recovery base',
   2:  '19 mi · Easy miles',
-  3:  '23 mi · First tempo',
+  3:  '23 mi · First MGP tempo + strength',
   4:  '26 mi · Tempo build',
   5:  '29 mi · Intervals start',
   6:  '31 mi · 14 mi long',
   7:  '23 mi · Step-back week',
-  8:  '34 mi · 16 mi long',
-  9:  '34 mi · Tempo + 15 mi long',
-  10: '26 mi · Step-back week',
-  11: '38 mi · 18 mi long run',
-  12: '34 mi · 14 mi long',
-  13: '36 mi · 20 mi PEAK run',
-  14: '28 mi · Transition block',
+  8:  '36 mi · 15 mi long + fueling practice',
+  9:  '38 mi · 16 mi long, MGP finish',
+  10: '27 mi · Step-back week',
+  11: '41 mi · Peak: 18 mi long, MGP finish',
+  12: '35 mi · 14 mi long',
+  13: '38 mi · 20 mi PEAK rehearsal',
+  14: '≈26 mi · Half-marathon tune-up',
   15: '24 mi · Taper begins',
-  16: '16 mi · Deep taper',
+  16: '17 mi · Deep taper',
   17: 'Race week · Oct 17 🏁',
 };
 
@@ -97,7 +98,7 @@ export function PlanOverview() {
         <p className="text-2xl mb-1">🏁</p>
         <p className="font-bold">Race Day</p>
         <p className="text-muted text-sm">Saturday, October 17, 2026</p>
-        <p className="text-xs text-muted mt-1">Mankato Marathon · Sub-4:00 goal</p>
+        <p className="text-xs text-muted mt-1">Mankato Marathon · A-goal 3:50 · defend sub-4:00</p>
       </div>
     </div>
   );
