@@ -15,23 +15,45 @@ export type Message = {
   streaming?: boolean;
 };
 
+// Keys must match the base tool names in COACH_TOOLS (lib/mcp-client.ts) or the
+// synthetic tools in lib/coach-tools.ts — anything unmatched falls back to the
+// de-underscored raw name in toolLabel().
 const TOOL_LABELS: Record<string, string> = {
-  get_hrv: 'HRV data',
-  get_sleep_data: 'Sleep data',
-  get_body_battery: 'Body battery',
-  get_training_readiness: 'Training readiness',
-  get_training_status: 'Training status',
+  // Synthetic (app) tools
+  remember: 'Saving to memory',
+  suggest_route: 'Suggesting route',
+  // Activities
+  get_activities: 'Activities',
   get_activities_by_date: 'Activities',
-  get_last_activity: 'Last activity',
-  get_resting_heart_rate: 'Resting HR',
-  get_stress: 'Stress data',
-  get_gear: 'Gear list',
-  get_gear_stats: 'Gear mileage',
-  schedule_workout: 'Scheduling workout',
-  upload_workout: 'Uploading workout',
-  schedule_week: 'Scheduling week',
-  get_vo2max: 'VO2max',
+  get_activity: 'Activity detail',
+  get_activity_splits: 'Activity splits',
+  get_activity_weather: 'Activity weather',
+  get_activity_gear: 'Activity gear',
+  // Training metrics
+  get_training_readiness: 'Training readiness',
+  get_morning_training_readiness: 'Training readiness',
+  get_training_status: 'Training status',
+  get_hrv_data: 'HRV data',
+  get_hrv_trend: 'HRV trend',
+  get_vo2max_trend: 'VO2max',
+  get_training_load_trend: 'Training load',
   get_race_predictions: 'Race predictions',
+  get_personal_record: 'Personal records',
+  // Recovery / wellness
+  get_sleep_data: 'Sleep data',
+  get_sleep_summary: 'Sleep summary',
+  get_body_battery: 'Body battery',
+  get_rhr_day: 'Resting HR',
+  get_stress_summary: 'Stress data',
+  get_steps_data: 'Steps',
+  // Workouts
+  get_workouts: 'Workouts',
+  get_scheduled_workouts: 'Scheduled workouts',
+  upload_workout: 'Uploading workout',
+  schedule_workout: 'Scheduling workout',
+  unschedule_workout: 'Unscheduling workout',
+  // Gear
+  get_gear: 'Gear list',
 };
 
 function toolLabel(fullName: string): string {

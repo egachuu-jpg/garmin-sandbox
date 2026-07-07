@@ -21,9 +21,12 @@ delete confirmation, Plan week math unified on `getPlanContext()`.
       view) — it currently always expands below all three chips.
 - [ ] **Chat: day dividers + timestamps** — messages need `created_at`
       exposed via the messages API and rendered as date separators.
-- [ ] **Sync `TOOL_LABELS` in `components/chat/MessageBubble.tsx` with the
-      real tool names** in `COACH_TOOLS` (most entries are stale —
-      `get_hrv` vs `get_hrv_data` etc. — so chips fall back to raw names).
+- [x] **Sync `TOOL_LABELS` in `components/chat/MessageBubble.tsx` with the
+      real tool names** in `COACH_TOOLS` — rebuilt the map so every key
+      matches a real base tool name (or a synthetic tool), fixing the stale
+      `get_hrv`/`get_stress`/`get_vo2max`/`get_resting_heart_rate` keys and
+      dropping non-existent ones (`get_last_activity`, `get_gear_stats`,
+      `schedule_week`).
 - [ ] **Friendlier chat errors** — raw error strings currently render inside
       the coach bubble; show a generic message + retry button, log details.
 - [ ] **Scheduled workouts: highlight today + group by week** — the list is
