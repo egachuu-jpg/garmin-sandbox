@@ -33,7 +33,7 @@ export async function POST(req: Request) {
 
   const fmt = (v: number | null | undefined) => (v === null || v === undefined ? 'no data' : String(v));
 
-  const prompt = `You are this runner's coach. Marathon goal: sub-4 hours at the Mankato Marathon (Oct 17, 2026). Managing right SI joint dysfunction, so recovery signals matter a lot.
+  const prompt = `You are this runner's coach. Marathon goals: 3:50 A-goal (8:45/mi) at the Mankato Marathon (Oct 17, 2026), sub-4:00 as the B-goal floor. Managing right SI joint dysfunction, so recovery signals matter a lot.
 
 Today's snapshot:
 - Training Readiness: ${fmt(dashboard.readiness)}

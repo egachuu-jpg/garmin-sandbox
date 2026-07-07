@@ -74,6 +74,7 @@ export async function GET() {
 
   const today = getPlanContext().startOfTodayUTC.toISOString().split('T')[0];
 
+  const TOOL_NAMES = ['get_training_readiness', 'get_hrv_data', 'get_sleep_data', 'get_stats', 'get_rhr_day'];
   const [readiness, hrv, sleep, stats, rhr] = await Promise.allSettled([
     executeTool('taxuspt__get_training_readiness', { date: today }),
     executeTool('taxuspt__get_hrv_data', { date: today }),
@@ -87,21 +88,42 @@ export async function GET() {
     executeTool('taxuspt__get_rhr_day', { date: today }),
   ]);
 
+  // A rejected tool becomes a null metric (a dash in the UI) — without this
+  // log the failure is invisible and undiagnosable in production.
+  [readiness, hrv, sleep, stats, rhr].forEach((r, i) => {
+    if (r.status === 'rejected') {
+      console.error(`[dashboard] ${TOOL_NAMES[i]} failed:`, String(r.reason).slice(0, 500));
+    }
+  });
+
   const val = (r: PromiseSettledResult<unknown>) =>
     r.status === 'fulfilled' ? parseToolResult(r.value) : null;
 
   // get_training_readiness returns a list; take the first element (morning assessment).
   const firstOf = (v: unknown): unknown => (Array.isArray(v) && v.length > 0 ? v[0] : v);
 
+  // The other invisible-failure mode: the tool call *fulfills* but the payload
+  // is an error message (Garmin auth/MFA failures arrive as text inside the
+  // MCP result), so pickNumber finds nothing. Log a snippet so Railway logs
+  // show what actually came back instead of just a dash in the UI.
+  const debugNull = (name: string, r: PromiseSettledResult<unknown>, picked: number | null) => {
+    if (picked === null && r.status === 'fulfilled') {
+      console.warn(
+        `[dashboard] ${name} returned no usable value; payload: ${JSON.stringify(parseToolResult(r.value)).slice(0, 300)}`
+      );
+    }
+    return picked;
+  };
+
   const data: DashboardData = {
     date: today,
-    readiness: pickNumber(firstOf(val(readiness)), ['score']),
+    readiness: debugNull('get_training_readiness', readiness, pickNumber(firstOf(val(readiness)), ['score'])),
     // garmin_mcp returns snake_case keys (last_night_avg_hrv_ms, weekly_avg_hrv_ms)
-    hrv: pickNumber(val(hrv), ['last_night_avg_hrv_ms', 'lastNightAvg', 'weekly_avg_hrv_ms', 'weeklyAvg', 'last_night_5min_high_hrv_ms', 'lastNight5MinHigh']),
-    sleepScore: pickNumber(val(sleep), ['overallScore', 'overall', 'sleepScore', 'value']),
+    hrv: debugNull('get_hrv_data', hrv, pickNumber(val(hrv), ['last_night_avg_hrv_ms', 'lastNightAvg', 'weekly_avg_hrv_ms', 'weeklyAvg', 'last_night_5min_high_hrv_ms', 'lastNight5MinHigh'])),
+    sleepScore: debugNull('get_sleep_data', sleep, pickNumber(val(sleep), ['overallScore', 'overall', 'sleepScore', 'value'])),
     // get_stats curates this as "body_battery_current" from Garmin's raw bodyBatteryMostRecentValue.
-    bodyBattery: pickNumber(val(stats), ['body_battery_current', 'bodyBatteryMostRecentValue']),
-    restingHr: pickNumber(val(rhr), ['restingHeartRate', 'value']),
+    bodyBattery: debugNull('get_stats', stats, pickNumber(val(stats), ['body_battery_current', 'bodyBatteryMostRecentValue'])),
+    restingHr: debugNull('get_rhr_day', rhr, pickNumber(val(rhr), ['restingHeartRate', 'value'])),
     cached: false,
   };
 

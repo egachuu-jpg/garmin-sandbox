@@ -33,7 +33,7 @@ type Props = {
 
 const SUGGESTED_PROMPTS = [
   "How was my sleep and HRV this week?",
-  "Am I on track for sub-4 at Mankato?",
+  "Am I on track for 3:50 at Mankato?",
   "Build tomorrow's interval workout",
   "How is my gear holding up?",
 ];
@@ -51,7 +51,7 @@ const REPORT_PROMPTS = [
     emoji: '🏁',
     title: 'Race Readiness',
     prompt:
-      'Assess my current race readiness for the Mankato Marathon sub-4 goal. Check VO2max, recent long runs, training load, and project my likely finish time.',
+      'Assess my current race readiness for the Mankato Marathon (3:50 A-goal, sub-4 B-goal). Check VO2max, recent long runs, training load, and project my likely finish time.',
   },
   {
     emoji: '💚',

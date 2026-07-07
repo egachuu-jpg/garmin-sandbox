@@ -202,6 +202,14 @@ export async function getAllTools(): Promise<AnthropicTool[]> {
   return filtered;
 }
 
+// A dead subprocess surfaces as "Connection closed" (MCP -32000) on the next
+// call. onclose eviction usually beats us to the map, but either way the right
+// move is the same: reconnect once and retry.
+function isConnectionClosed(err: unknown): boolean {
+  const s = String(err);
+  return s.includes('Connection closed') || s.includes('Not connected');
+}
+
 export async function executeTool(
   fullName: string,
   input: Record<string, unknown>
@@ -215,9 +223,19 @@ export async function executeTool(
   const server = MCP_SERVERS.find(s => s.id === serverId);
   if (!server) throw new Error(`Unknown MCP server: ${serverId}`);
 
-  const client = await getClient(server);
-  if (!client) throw new Error(`MCP server ${serverId} is not available`);
+  const callOnce = async () => {
+    const client = await getClient(server);
+    if (!client) throw new Error(`MCP server ${serverId} is not available`);
+    const result = await client.callTool({ name: toolName, arguments: input });
+    return result.content;
+  };
 
-  const result = await client.callTool({ name: toolName, arguments: input });
-  return result.content;
+  try {
+    return await callOnce();
+  } catch (err) {
+    if (!isConnectionClosed(err)) throw err;
+    console.warn(`[MCP] ${toolName}: connection was dead, retrying on a fresh subprocess.`);
+    clients.delete(serverId);
+    return await callOnce();
+  }
 }
