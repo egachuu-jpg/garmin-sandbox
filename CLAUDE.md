@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**garmin-coach** is a mobile-first AI fitness coaching PWA built with Next.js 15 / React 19 / TypeScript. It connects Claude (claude-sonnet-4-6) to Garmin Connect data via a Python MCP server and persists conversations + coach memory in PostgreSQL. The app is deployed on Railway. There is one user (the athlete) and login is a simple shared passphrase cookie (`APP_PASSPHRASE`).
+**garmin-coach** is a mobile-first AI fitness coaching PWA built with Next.js 15 / React 19 / TypeScript. It connects Claude (model ID configured in `lib/agent.ts` — never hardcode it elsewhere; a model retirement should be a one-line change) to Garmin Connect data via a Python MCP server and persists conversations + coach memory in PostgreSQL. The app is deployed on Railway. There is one user (the athlete) and login is a simple shared passphrase cookie (`APP_PASSPHRASE`).
 
 ## Commands
 
@@ -87,7 +87,7 @@ Tool names follow the pattern `{serverId}__{toolName}` (e.g. `taxuspt__get_activ
 
 ### Database Schema (`db/schema.sql`)
 
-Seven tables:
+Tables (see `db/schema.sql` for the authoritative list):
 - **conversations** — chat sessions (UUID, title, timestamps)
 - **messages** — individual turns; `raw_content` (JSONB) holds the full `MessageParam[]` array including interleaved `tool_result` messages so the conversation can be replayed to Anthropic without breaking tool-use pairing. `tool_calls` (JSONB) is a UI-facing summary only. `completed` is FALSE while an assistant turn is still being persisted round by round (clients poll on it).
 - **gear** — running shoes with `mileage_offset` and `alert_threshold_miles` (default 400)
@@ -141,3 +141,13 @@ The chat API streams newline-delimited `data:` events. The client in `components
 ## Deployment (Railway)
 
 Railway builds with Nixpacks (`nixpacks.toml`): installs Python 3.11 venv with `garmin_mcp` and `curl_cffi`, then runs the Node build. The start command is `start.sh` (not `npm start` directly) to set `LD_LIBRARY_PATH`. See `DEPLOY.md` for the full Railway setup walkthrough including the MFA token-capture step.
+
+## Pointers
+
+- **Lessons learned:** `docs/lessons-learned.md` — non-obvious gotchas and decisions that shouldn't be re-litigated. Add a one-line entry (deduped, under a domain heading) whenever something goes wrong, needs a workaround, or reveals a hidden constraint.
+- **Session history:** `SESSION_LOG.md`
+- **Backlog:** `TODO.md`
+
+## Session Wrap-Up
+
+When the user says **"donezo"** or **"wrap up"**, run the `/session-end` command: append a dated, factual bullet entry to `SESSION_LOG.md`, extract any new non-obvious lessons to `docs/lessons-learned.md`, then commit both with `docs: session wrap-up YYYY-MM-DD`.
