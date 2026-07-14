@@ -60,6 +60,7 @@ The athlete just tapped on ${label}. In 2-3 short, concrete sentences, tell the 
 
     return NextResponse.json({ insight });
   } catch (err) {
-    return NextResponse.json({ error: String(err) }, { status: 502 });
+    console.error('[insight] failed:', err);
+    return NextResponse.json({ error: 'Insight generation failed' }, { status: 502 });
   }
 }
