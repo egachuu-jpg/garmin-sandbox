@@ -65,6 +65,7 @@ export async function GET() {
 
     return NextResponse.json({ gear });
   } catch (err) {
-    return NextResponse.json({ gear: [], error: String(err) }, { status: 200 });
+    console.error('[gear/garmin] failed:', err);
+    return NextResponse.json({ gear: [], error: 'Failed to sync gear from Garmin' }, { status: 200 });
   }
 }

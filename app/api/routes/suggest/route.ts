@@ -33,6 +33,7 @@ export async function POST(req: Request) {
     const result = await suggestRoutes(params);
     return NextResponse.json(result);
   } catch (err) {
-    return NextResponse.json({ error: String(err) }, { status: 502 });
+    console.error('[routes/suggest] failed:', err);
+    return NextResponse.json({ error: 'Failed to suggest a route' }, { status: 502 });
   }
 }
