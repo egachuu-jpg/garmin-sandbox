@@ -27,8 +27,10 @@ delete confirmation, Plan week math unified on `getPlanContext()`.
       `get_hrv`/`get_stress`/`get_vo2max`/`get_resting_heart_rate` keys and
       dropping non-existent ones (`get_last_activity`, `get_gear_stats`,
       `schedule_week`).
-- [ ] **Friendlier chat errors** — raw error strings currently render inside
-      the coach bubble; show a generic message + retry button, log details.
+- [x] **Friendlier chat errors** — failed turns now render a generic message
+      with a "Try again" button (`components/chat/MessageBubble.tsx`,
+      `components/chat/ChatInterface.tsx`); connection drops poll-reconcile
+      instead of showing an error.
 - [ ] **Scheduled workouts: highlight today + group by week** — the list is
       flat with no "today" anchor.
 - [ ] **Make Plan week rows tappable** — seed chat with "What's Week N look
@@ -85,5 +87,7 @@ turns that crashed between persisting a round and its tool results.
       `app/api/insight/route.ts`; a pace tweak shouldn't be a deploy.
 - [x] **Centralize the model ID** — `app/api/insight/route.ts` now imports
       `COACH_MODEL` from `lib/agent.ts` instead of hardcoding the model string.
-- [ ] **Don't stream raw error internals to the client** in the chat SSE
-      `error` event.
+- [x] **Don't stream raw error internals to the client** in the chat SSE
+      `error` event — server logs the real error with `console.error` and
+      sends a generic message; `/api/insight` and `/api/workouts` sanitized
+      the same way.

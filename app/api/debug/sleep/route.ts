@@ -36,7 +36,8 @@ async function tryTool(name: string, input: Record<string, unknown>) {
     const raw = await executeTool(name, input);
     return { ok: true as const, payload: parseToolResult(raw) };
   } catch (err) {
-    return { ok: false as const, error: String(err).slice(0, 500) };
+    console.error(`[debug/sleep] ${name} failed:`, err);
+    return { ok: false as const, error: 'Failed to load sleep data' };
   }
 }
 

@@ -89,6 +89,7 @@ export async function GET(req: Request) {
     cache = { at: Date.now(), data: workouts };
     return NextResponse.json({ workouts, cached: false });
   } catch (err) {
-    return NextResponse.json({ workouts: [], error: String(err) }, { status: 200 });
+    console.error('[workouts] failed:', err);
+    return NextResponse.json({ workouts: [], error: 'Failed to load scheduled workouts' }, { status: 200 });
   }
 }

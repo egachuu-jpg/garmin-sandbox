@@ -98,6 +98,7 @@ export function ChatInterface({ conversationId, initialMessages = [], seedPrompt
   const seededRef = useRef(false);
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const lastSentRef = useRef<string>('');
   // Only autoscroll while the user is pinned to the bottom — scrolling up to
   // reread mid-stream must not get yanked back down by each token batch.
   const pinnedRef = useRef(true);
@@ -118,7 +119,11 @@ export function ChatInterface({ conversationId, initialMessages = [], seedPrompt
   const startPolling = useCallback(() => {
     if (pollingRef.current) clearInterval(pollingRef.current);
 
+    let attempts = 0;
+    const MAX_POLL_ATTEMPTS = 15; // ~30s at 2s intervals
+
     const poll = async () => {
+      attempts += 1;
       try {
         const res = await fetch(`/api/messages/${conversationId}`);
         if (!res.ok) return;
@@ -137,9 +142,29 @@ export function ChatInterface({ conversationId, initialMessages = [], seedPrompt
             }))
           );
           setStreaming(false);
+          return;
         }
       } catch {
         // transient error — keep polling
+      }
+
+      // The placeholder assistant row may have been deleted (turn failed before
+      // the first model call), leaving the last row as the user message forever
+      // — the success condition above never fires. Give up after ~30s and flip
+      // the pending/last assistant bubble to the error + Retry state.
+      if (attempts >= MAX_POLL_ATTEMPTS) {
+        if (pollingRef.current) clearInterval(pollingRef.current);
+        pollingRef.current = null;
+        setMessages(prev => {
+          const last = prev[prev.length - 1];
+          if (!last || last.role !== 'assistant') return prev;
+          return prev.map(m =>
+            m.id === last.id
+              ? { ...m, text: m.text || 'The coach hit a problem finishing this reply.', streaming: false, error: true }
+              : m
+          );
+        });
+        setStreaming(false);
       }
     };
 
@@ -171,6 +196,7 @@ export function ChatInterface({ conversationId, initialMessages = [], seedPrompt
       }
 
       const trimmed = text.trim();
+      lastSentRef.current = trimmed;
       const userMsgId = crypto.randomUUID();
       const assistantMsgId = crypto.randomUUID();
 
@@ -270,7 +296,7 @@ export function ChatInterface({ conversationId, initialMessages = [], seedPrompt
                 setMessages(prev =>
                   prev.map(m =>
                     m.id === assistantMsgId
-                      ? { ...m, text: `Something went wrong: ${event.message}`, streaming: false }
+                      ? { ...m, text: m.text || 'The coach hit a problem finishing this reply.', streaming: false, error: true }
                       : m
                   )
                 );
@@ -292,10 +318,11 @@ export function ChatInterface({ conversationId, initialMessages = [], seedPrompt
           setMessages(prev =>
             prev.map(m =>
               m.id === assistantMsgId
-                ? { ...m, text: `Connection error: ${String(err)}`, streaming: false }
+                ? { ...m, text: m.text || 'Connection dropped — catching up…', streaming: false }
                 : m
             )
           );
+          startPolling();
         }
       } finally {
         abortRef.current = null;
@@ -304,6 +331,29 @@ export function ChatInterface({ conversationId, initialMessages = [], seedPrompt
     },
     [conversationId, streaming, startPolling]
   );
+
+  const retryLast = useCallback(() => {
+    const text = lastSentRef.current;
+    if (!text || streaming) return;
+    // Drop the failed assistant bubble AND the user bubble it answered, then
+    // resend — sendMessage re-adds the user bubble, so the transcript shows the
+    // exchange once. (The DB will hold a duplicate user row; that is acceptable
+    // and matches the user manually retyping.)
+    setMessages(prev => {
+      const next = [...prev];
+      // walk from the end: remove the last errored assistant msg and the user msg before it
+      for (let i = next.length - 1; i >= 0; i--) {
+        if (next[i].role === 'assistant' && next[i].error) {
+          next.splice(i, 1);
+          if (i - 1 >= 0 && next[i - 1].role === 'user' && next[i - 1].text === text) next.splice(i - 1, 1);
+          break;
+        }
+      }
+      return next;
+    });
+    // sendMessage reads state via closure; call it on the next tick so the splice lands first
+    setTimeout(() => sendMessage(text), 0);
+  }, [streaming, sendMessage]);
 
   // Auto-send seed prompt from Reports page
   useEffect(() => {
@@ -350,7 +400,7 @@ export function ChatInterface({ conversationId, initialMessages = [], seedPrompt
         )}
 
         {messages.map(msg => (
-          <MessageBubble key={msg.id} message={msg} />
+          <MessageBubble key={msg.id} message={msg} onRetry={msg.error ? retryLast : undefined} />
         ))}
         <div ref={bottomRef} />
       </div>

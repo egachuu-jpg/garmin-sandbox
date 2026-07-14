@@ -32,6 +32,7 @@ export async function POST(req: Request) {
       descentMeters: Math.round(route.descentMeters),
     });
   } catch (err) {
-    return NextResponse.json({ error: String(err) }, { status: 502 });
+    console.error('[routes/directions] failed:', err);
+    return NextResponse.json({ error: 'Failed to get directions' }, { status: 502 });
   }
 }

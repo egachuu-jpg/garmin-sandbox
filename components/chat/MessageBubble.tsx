@@ -13,6 +13,7 @@ export type Message = {
   text: string;
   toolCalls?: ToolCall[];
   streaming?: boolean;
+  error?: boolean;   // failed turn — render retry affordance
 };
 
 // Keys must match the base tool names in COACH_TOOLS (lib/mcp-client.ts) or the
@@ -61,7 +62,7 @@ function toolLabel(fullName: string): string {
   return TOOL_LABELS[shortName] ?? shortName.replace(/_/g, ' ');
 }
 
-export function MessageBubble({ message }: { message: Message }) {
+export function MessageBubble({ message, onRetry }: { message: Message; onRetry?: () => void }) {
   const isUser = message.role === 'user';
 
   return (
@@ -118,6 +119,15 @@ export function MessageBubble({ message }: { message: Message }) {
             {/* Cursor while streaming */}
             {message.streaming && message.text && (
               <span className="inline-block w-0.5 h-4 bg-primary animate-pulse ml-0.5 align-text-bottom" />
+            )}
+
+            {message.error && onRetry && (
+              <button
+                onClick={onRetry}
+                className="mt-2 min-h-[44px] px-4 rounded-xl border border-surface-border text-sm font-medium text-gray-200 active:bg-surface-border transition-colors"
+              >
+                Try again
+              </button>
             )}
           </div>
         )}

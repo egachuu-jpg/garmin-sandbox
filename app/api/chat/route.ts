@@ -28,7 +28,7 @@ export async function POST(req: Request) {
         await runCoachTurn(conversationId, text, send);
       } catch (err) {
         console.error('[chat] turn failed:', err);
-        send({ type: 'error', message: String(err) });
+        send({ type: 'error', message: 'The coach hit a problem finishing this reply.' });
       } finally {
         if (!clientGone) {
           try {
